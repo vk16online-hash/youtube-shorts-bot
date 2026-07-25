@@ -3,19 +3,16 @@ name: Generate & Upload YouTube Short (2x/day)
 on:
   schedule:
     # Runs at 03:00 UTC and 15:00 UTC every day (~12 hours apart).
-    # Adjust these hours to match when you want uploads to land in your
-    # audience's timezone. GitHub cron times are UTC and, especially during
-    # high platform load, can fire a few minutes late — that's normal.
     - cron: '0 3 * * *'
     - cron: '0 15 * * *'
-  workflow_dispatch: {}  # lets you trigger a run manually from the Actions tab
+  workflow_dispatch: {}  # Lets you trigger a run manually from the Actions tab
 
 jobs:
   generate-short:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: write  # needed so the workflow can commit used_topics.json back
+      contents: write  # Needed so the workflow can commit used_topics.json back
 
     steps:
       - name: Checkout repo
@@ -43,23 +40,19 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: python shorts_pipeline.py
 
-      # Always keep a copy of the rendered video + voiceover as a workflow
-      # artifact, even if the YouTube upload step fails for some reason —
-      # so you never lose a render due to an upload hiccup.
+      # Backup generated files as GitHub Action Artifacts
       - name: Upload video as workflow artifact (backup)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: short-video-${{ github.run_id }}
           path: |
-            final_short_*.mp4
+            final_output.mp4
             voiceover.mp3
           retention-days: 14
           if-no-files-found: ignore
 
-      # Commit the updated topic-history file back to the repo so future
-      # runs (on a fresh runner) know what's already been made and never
-      # repeat a story. Only commits if the file actually changed.
+      # Persist topic history back to repo safely with --rebase
       - name: Persist topic history back to repo
         if: always()
         run: |
@@ -70,5 +63,6 @@ jobs:
             echo "No changes to used_topics.json — skipping commit."
           else
             git commit -m "Update topic history [skip ci]"
+            git pull --rebase origin main
             git push
           fi
