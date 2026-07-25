@@ -60,7 +60,7 @@ TRANSITION_STYLES = ["fade", "dissolve", "wipeleft", "wiperight", "circleopen", 
 def cleanup_temp_files():
     """Removes leftover temporary files from previous pipeline runs."""
     print("🧹 Cleaning up leftover temporary files...")
-    patterns = ["*.mp4", "*.mp3", "*.png", "*.srt", "*.vtt", "*.log", "temp_*", "raw_*"]
+    patterns = ["*.mp4", "*.mp3", "*.png", "*.srt", "*.vtt", "*.ass", "*.log", "temp_*", "raw_*"]
     for pattern in patterns:
         for filepath in glob.glob(pattern):
             if filepath != "final_output.mp4" and os.path.exists(filepath):
@@ -304,10 +304,33 @@ raw JSON: a list of objects, one per claim, each with:
     return topic_data
 
 # ==========================================
-# 4. DETERMINISTIC 2-WORD SUBTITLE PARSER
+# 4. ADVANCED KARAOKE-STYLE ASS CAPTION ENGINE
 # ==========================================
+ASS_HEADER = """[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 2
+ScaledBorderAndShadow: yes
 
-# FIXED: Flexible time parser that handles both HH:MM:SS,mmm and MM:SS,mmm
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Burst,DejaVu Sans,86,&H00FFFFFF,&H0000D7FF,&H00101010,&H00000000,-1,0,0,0,100,100,0,0,1,6,3,2,60,60,340,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+def _ass_time(ms):
+    ms = max(int(ms), 0)
+    h = ms // 3600000
+    ms %= 3600000
+    m = ms // 60000
+    ms %= 60000
+    s = ms // 1000
+    cs = (ms % 1000) // 10
+    return f"{h:d}:{m:02d}:{s:02d}.{cs:02d}"
+
 def time_str_to_ms(time_str):
     time_str = time_str.replace(".", ",")
     parts = time_str.split(":")
@@ -322,24 +345,14 @@ def time_str_to_ms(time_str):
     s, ms = s_ms.split(",")
     return h * 3600000 + m * 60000 + int(s) * 1000 + int(ms)
 
-def ms_to_time_str(ms):
-    h = int(ms // 3600000)
-    ms %= 3600000
-    m = int(ms // 60000)
-    ms %= 60000
-    s = int(ms // 1000)
-    ms %= 1000
-    return f"{h:02d}:{m:02d}:{s:02d},{int(ms):03d}"
-
-def parse_vtt_to_two_word_srt(vtt_file_path, srt_file_path="captions.srt"):
-    """Parses full VTT file and creates clean, non-overlapping 2-word caption bursts."""
+def parse_vtt_to_karaoke_ass(vtt_file_path, ass_file_path="captions.ass"):
+    """Parses full VTT file and creates animated karaoke .ass subtitle bursts."""
     if not os.path.exists(vtt_file_path):
         return False
 
     with open(vtt_file_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
-    # FIXED: Pattern matches HH:MM:SS.mmm and MM:SS.mmm
     time_pattern = re.compile(r'((?:\d{2}:)?\d{2}:\d{2}[\.,]\d{3})\s*-->\s*((?:\d{2}:)?\d{2}:\d{2}[\.,]\d{3})')
     cues = []
     current_start = None
@@ -368,35 +381,52 @@ def parse_vtt_to_two_word_srt(vtt_file_path, srt_file_path="captions.srt"):
     if not cues:
         return False
 
-    with open(srt_file_path, "w", encoding="utf-8") as f:
-        idx = 1
-        for start_str, end_str, full_text in cues:
-            clean_text = re.sub(r'<[^>]+>', '', full_text).strip()
-            words = clean_text.split()
-            if not words:
-                continue
+    events = []
+    accent_colors = ["&H0000D7FF", "&H0059FFAD", "&H00FF6EC7"]  # Gold, Mint Green, Pink
 
-            start_ms = time_str_to_ms(start_str)
-            end_ms = time_str_to_ms(end_str)
-            duration_ms = max(end_ms - start_ms, 400)
+    for cue_idx, (start_str, end_str, full_text) in enumerate(cues):
+        clean_text = re.sub(r'<[^>]+>', '', full_text).strip()
+        words = clean_text.split()
+        if not words:
+            continue
 
-            chunks = [" ".join(words[i:i+2]) for i in range(0, len(words), 2)]
-            num_chunks = len(chunks)
-            chunk_duration = duration_ms / num_chunks
+        start_ms = time_str_to_ms(start_str)
+        end_ms = time_str_to_ms(end_str)
+        duration_ms = max(end_ms - start_ms, 400)
 
-            for k, chk_text in enumerate(chunks):
-                c_start = start_ms + (k * chunk_duration)
-                c_end = start_ms + ((k + 1) * chunk_duration)
-                f.write(f"{idx}\n")
-                f.write(f"{ms_to_time_str(c_start)} --> {ms_to_time_str(c_end)}\n")
-                f.write(f"{chk_text.upper()}\n\n")
-                idx += 1
+        chunks = [words[i:i + 2] for i in range(0, len(words), 2)]
+        chunk_duration = duration_ms / len(chunks)
 
-    print(f"✅ Created {idx-1} exact 2-word caption bursts in {srt_file_path}")
+        for k, chunk_words in enumerate(chunks):
+            c_start = start_ms + (k * chunk_duration)
+            c_end = start_ms + ((k + 1) * chunk_duration)
+            accent = accent_colors[(cue_idx + k) % len(accent_colors)]
+
+            per_word_cs = max(int((chunk_duration / len(chunk_words)) / 10), 8)
+            karaoke_text = "".join(f"{{\\kf{per_word_cs}}}{w.upper()} " for w in chunk_words).strip()
+
+            pop = r"{\fscx55\fscy55\t(0,90,\fscx112\fscy112)\t(90,150,\fscx100\fscy100)}"
+            color_override = f"{{\\2c{accent}}}"
+
+            events.append(
+                f"Dialogue: 0,{_ass_time(c_start)},{_ass_time(c_end)},Burst,,0,0,0,,{pop}{color_override}{karaoke_text}"
+            )
+
+    with open(ass_file_path, "w", encoding="utf-8") as f:
+        f.write(ASS_HEADER)
+        f.write("\n".join(events))
+        f.write("\n")
+
+    print(f"✅ Created {len(events)} karaoke caption bursts in {ass_file_path}")
     return True
 
-async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceover.mp3", srt_path: str = "captions.srt"):
-    print("\n2️⃣ Generating Pro Voiceover & Full-Video Subtitles...")
+def _write_fallback_ass(ass_path):
+    with open(ass_path, "w", encoding="utf-8") as f:
+        f.write(ASS_HEADER)
+        f.write("Dialogue: 0,0:00:00.00,0:00:05.00,Burst,,0,0,0,,AUTOMATED SHORT\n")
+
+async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceover.mp3", ass_path: str = "captions.ass"):
+    print("\n2️⃣ Generating Pro Voiceover & Karaoke Captions...")
     raw_vtt = "raw_captions.vtt"
     try:
         cmd = [
@@ -408,18 +438,15 @@ async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceove
             "--write-media", audio_path,
             "--write-subtitles", raw_vtt
         ]
-        # FIXED: Added 30s execution timeout
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
         if result.returncode == 0 and os.path.exists(raw_vtt):
-            success = parse_vtt_to_two_word_srt(raw_vtt, srt_path)
+            success = parse_vtt_to_karaoke_ass(raw_vtt, ass_path)
             if not success:
-                with open(srt_path, "w", encoding="utf-8") as f:
-                    f.write("1\n00:00:00,000 --> 00:00:05,000\nAUTOMATED SHORT\n\n")
+                _write_fallback_ass(ass_path)
         else:
             print(f"⚠️ CLI edge-tts notice: {result.stderr}")
-            with open(srt_path, "w", encoding="utf-8") as f:
-                f.write("1\n00:00:00,000 --> 00:00:05,000\nAUTOMATED SHORT\n\n")
+            _write_fallback_ass(ass_path)
 
         print(f"✅ Voiceover saved to {audio_path}")
     except Exception as e:
@@ -428,10 +455,9 @@ async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceove
             "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
             "-t", "40", audio_path
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        with open(srt_path, "w", encoding="utf-8") as f:
-            f.write("1\n00:00:00,000 --> 00:00:05,000\nAUTOMATED SHORT\n\n")
+        _write_fallback_ass(ass_path)
 
-    return audio_path, srt_path
+    return audio_path, ass_path
 
 def get_media_duration(path: str, fallback: float = 40.0) -> float:
     try:
@@ -831,7 +857,7 @@ async def download_mixed_media_broll(scenes, clip_duration=4.0, pillar=""):
 def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None,
                                clip_duration=4.0, transition_duration=TRANSITION_DURATION,
                                output_filename="final_output.mp4"):
-    print("\n4️⃣ Rendering Pro Video with Crossfade Transitions & Hormozi Captions...")
+    print("\n4️⃣ Rendering Pro Video with Crossfade Transitions & Animated Karaoke Captions...")
     if not clips:
         raise ValueError("No video clips available for rendering.")
 
@@ -866,11 +892,8 @@ def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None
 
     vignette_box = "drawbox=x=0:y=ih-450:w=iw:h=450:color=black@0.4:t=fill"
 
-    subtitle_filter = (
-        f"subtitles=filename={subtitle_file}:force_style="
-        "'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H0000FFFF&,"
-        "OutlineColour=&H00000000&,BorderStyle=1,Outline=4,Shadow=2,Alignment=2,MarginV=120'"
-    )
+    # Animated Karaoke .ass Subtitle Filter
+    subtitle_filter = f"ass=filename={subtitle_file}"
 
     filter_chains.append(f"{final_video_label}{vignette_box},{subtitle_filter}[vfinal]")
 
@@ -888,9 +911,9 @@ def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None
         output_filename
     ])
 
-    print("⚡ Compiling pro-level video with crossfades, vignette, music & captions...")
+    print("⚡ Compiling pro-level video with crossfades, vignette, music & karaoke captions...")
     
-    # FIXED: Redirect log output to file to eliminate OS subprocess pipe buffer deadlock (30-min freeze fix)
+    # Log file redirection prevents 30-minute OS subprocess pipe deadlock
     with open("ffmpeg_render.log", "w", encoding="utf-8") as log_file:
         result = subprocess.run(ffmpeg_cmd, stdout=log_file, stderr=log_file)
 
@@ -967,7 +990,7 @@ async def run_master_pipeline():
     # Step 1: AI Brainstorming & Director Planning
     topic_data = await discover_viral_topic()
 
-    # Step 1b: Fact-check the key stats before they're locked into the script/graphics
+    # Step 1b: Fact-check the key stats
     topic_data = await fact_check_stat_badges(topic_data)
 
     # Step 2: Render Stat Graphic Badges
@@ -975,9 +998,9 @@ async def run_master_pipeline():
     for i, badge in enumerate(stat_badges):
         create_stat_badge_png(badge, f"badge_{i+1}.png")
 
-    # Step 3: Voiceover, Hormozi Captions & Sound Engine
+    # Step 3: Voiceover, Animated Karaoke Captions & Sound Engine
     script_text = topic_data.get("script", "")
-    raw_vo, srt_captions = await generate_voiceover_and_captions(script_text)
+    raw_vo, ass_captions = await generate_voiceover_and_captions(script_text)
     raw_vo = pad_audio_to_minimum(raw_vo, TARGET_MIN_SECONDS)
     faded_vo = apply_audio_fades(raw_vo)
 
@@ -1022,7 +1045,7 @@ async def run_master_pipeline():
     # Step 5: Render Final Master Video
     output_video = "final_output.mp4"
     render_professional_short(
-        clips, mixed_audio, srt_captions, stat_badges,
+        clips, mixed_audio, ass_captions, stat_badges,
         clip_duration=clip_duration, transition_duration=TRANSITION_DURATION,
         output_filename=output_video
     )
