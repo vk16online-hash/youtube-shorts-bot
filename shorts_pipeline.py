@@ -45,6 +45,11 @@ FPS = 30
 # Kept to transitions supported since ffmpeg 4.3 (xfade), so this runs on older ffmpeg builds too.
 TRANSITION_POOL = ["fade", "dissolve", "wipeleft", "wiperight", "smoothleft", "smoothright", "circleopen", "radial"]
 
+# --- ver8: multi-source archival b-roll + fact-checking ---
+WIKIMEDIA_API_URL = "https://commons.wikimedia.org/w/api.php"
+NASA_IMAGES_SEARCH_URL = "https://images-api.nasa.gov/search"
+STRICT_FACT_CHECK = os.environ.get("STRICT_FACT_CHECK", "false").lower() == "true"
+
 # ==========================================
 # 1. CLEANUP & INITIALIZATION
 # ==========================================
@@ -52,9 +57,10 @@ def cleanup_temp_files():
     """Removes leftover temporary files from previous pipeline runs."""
     print("🧹 Cleaning up leftover temporary files...")
     patterns = ["*.mp4", "*.mp3", "*.png", "*.srt", "*.vtt", "*.ass", "temp_*", "raw_*"]
+    keep_files = {"final_output.mp4"}
     for pattern in patterns:
         for filepath in glob.glob(pattern):
-            if filepath != "final_output.mp4" and os.path.exists(filepath):
+            if filepath not in keep_files and os.path.exists(filepath):
                 try:
                     os.remove(filepath)
                 except OSError:
@@ -101,11 +107,11 @@ FALLBACK_TOPICS_POOL = [
         "description": "How a messy laboratory accident in 1928 led to the discovery of penicillin, the miracle antibiotic that transformed modern medicine!\n\nKey Takeaways:\n- Alexander Fleming discovered penicillin by accident\n- Petri dish mold killed surrounding bacteria\n- Over 200 million lives saved worldwide\n\n#Shorts #Science #History #Penicillin #DidYouKnow",
         "stat_badges": ["YEAR 1928", "200 MILLION LIVES"],
         "scenes": [
-            {"search_query": "old scientist laboratory desk", "media_type": "photo", "motion": "zoom_in", "filter": "vintage"},
-            {"search_query": "petri dish bacteria macro", "media_type": "video", "motion": "zoom_out", "filter": "cinematic"},
-            {"search_query": "microscope scientist lab", "media_type": "video", "motion": "pan_right", "filter": "normal"},
-            {"search_query": "vintage medicine pharmacy bottles", "media_type": "photo", "motion": "pan_left", "filter": "vintage"},
-            {"search_query": "modern hospital operating room", "media_type": "video", "motion": "zoom_in", "filter": "vibrant"}
+            {"search_query": "Alexander Fleming laboratory", "media_type": "photo", "motion": "zoom_in", "filter": "vintage", "source_hint": "archival"},
+            {"search_query": "petri dish bacteria macro", "media_type": "video", "motion": "zoom_out", "filter": "cinematic", "source_hint": "stock"},
+            {"search_query": "microscope scientist lab", "media_type": "video", "motion": "pan_right", "filter": "normal", "source_hint": "stock"},
+            {"search_query": "penicillin vintage medicine bottle", "media_type": "photo", "motion": "pan_left", "filter": "vintage", "source_hint": "archival"},
+            {"search_query": "modern hospital operating room", "media_type": "video", "motion": "zoom_in", "filter": "vibrant", "source_hint": "stock"}
         ]
     },
     {
@@ -116,11 +122,11 @@ FALLBACK_TOPICS_POOL = [
         "description": "Explore the terrifying depths of the Mariana Trench, Earth's deepest underwater abyss, reaching nearly 36,000 feet deep!\n\nKey Takeaways:\n- 36,000 feet deep in complete darkness\n- Water pressure 1,000x greater than surface level\n- Glowing creatures thrive in extreme depths\n\n#Shorts #Ocean #DeepSea #EarthFacts #DidYouKnow",
         "stat_badges": ["36,000 FEET", "1,000X PRESSURE"],
         "scenes": [
-            {"search_query": "deep blue ocean water abyss", "media_type": "video", "motion": "zoom_in", "filter": "cinematic"},
-            {"search_query": "underwater submarine deep sea", "media_type": "photo", "motion": "pan_left", "filter": "cinematic"},
-            {"search_query": "bioluminescent sea creature glowing", "media_type": "video", "motion": "zoom_out", "filter": "vibrant"},
-            {"search_query": "mount everest snow mountain peak", "media_type": "photo", "motion": "pan_right", "filter": "normal"},
-            {"search_query": "deep ocean dark underwater", "media_type": "video", "motion": "zoom_in", "filter": "cinematic"}
+            {"search_query": "deep blue ocean water abyss", "media_type": "video", "motion": "zoom_in", "filter": "cinematic", "source_hint": "stock"},
+            {"search_query": "bathyscaphe Trieste submarine", "media_type": "photo", "motion": "pan_left", "filter": "cinematic", "source_hint": "archival"},
+            {"search_query": "bioluminescent sea creature glowing", "media_type": "video", "motion": "zoom_out", "filter": "vibrant", "source_hint": "stock"},
+            {"search_query": "Mount Everest peak", "media_type": "photo", "motion": "pan_right", "filter": "normal", "source_hint": "archival"},
+            {"search_query": "deep ocean dark underwater", "media_type": "video", "motion": "zoom_in", "filter": "cinematic", "source_hint": "stock"}
         ]
     },
     {
@@ -131,11 +137,11 @@ FALLBACK_TOPICS_POOL = [
         "description": "Discover the Voyager Golden Record, humanity's time capsule sent to interstellar space for alien civilizations to find!\n\nKey Takeaways:\n- Solid gold record carrying Earth sounds and music\n- Greetings in 55 human languages\n- Over 15 billion miles from Earth in deep space\n\n#Shorts #Space #NASA #Voyager #Cosmos",
         "stat_badges": ["YEAR 1977", "15 BILLION MILES"],
         "scenes": [
-            {"search_query": "voyager spacecraft space NASA", "media_type": "photo", "motion": "zoom_in", "filter": "cinematic"},
-            {"search_query": "golden record space voyager", "media_type": "photo", "motion": "pan_right", "filter": "vibrant"},
-            {"search_query": "deep space stars galaxy nebula", "media_type": "video", "motion": "zoom_out", "filter": "cinematic"},
-            {"search_query": "sound waves glowing audio spectrum", "media_type": "video", "motion": "pan_left", "filter": "vibrant"},
-            {"search_query": "planet earth floating space", "media_type": "video", "motion": "zoom_in", "filter": "normal"}
+            {"search_query": "Voyager 1 spacecraft", "media_type": "photo", "motion": "zoom_in", "filter": "cinematic", "source_hint": "archival"},
+            {"search_query": "Voyager Golden Record", "media_type": "photo", "motion": "pan_right", "filter": "vibrant", "source_hint": "archival"},
+            {"search_query": "deep space stars galaxy nebula", "media_type": "video", "motion": "zoom_out", "filter": "cinematic", "source_hint": "stock"},
+            {"search_query": "sound waves glowing audio spectrum", "media_type": "video", "motion": "pan_left", "filter": "vibrant", "source_hint": "stock"},
+            {"search_query": "planet Earth from space", "media_type": "photo", "motion": "zoom_in", "filter": "normal", "source_hint": "archival"}
         ]
     }
 ]
@@ -205,6 +211,7 @@ Generate a high-retention viral video blueprint in JSON format:
   - "media_type": Alternate between "video" and "photo"
   - "motion": One of ["zoom_in", "zoom_out", "pan_left", "pan_right"]
   - "filter": One of ["cinematic", "vintage", "bw", "vibrant", "normal"]
+  - "source_hint": "archival" if this scene should show a real historical photo, real document, or real NASA mission image (use for named people/events/objects), or "stock" if a generic cinematic mood shot is fine (use for abstract/atmosphere beats)
 
 Return ONLY valid raw JSON output without markdown formatting.
 """
@@ -444,6 +451,60 @@ def create_stat_badge_png(text_string, output_png_path="badge.png"):
     return output_png_path
 
 # ==========================================
+# 6b. FACT-CHECK PASS  (ver8)
+# ==========================================
+# ver7 shipped whatever Gemini wrote, unverified. This runs one grounded
+# Gemini call (Google Search tool) against the script's own stat badges
+# before we lock the topic in. It fails OPEN by default — a failed/errored
+# check just logs a warning so an unattended cron run doesn't stall out.
+# Set STRICT_FACT_CHECK=true to instead swap to a vetted fallback topic
+# whenever grounding actively flags a claim as wrong.
+async def fact_check_claims(topic_data):
+    api_key = os.environ.get("GEMINI_API_KEY")
+    claims = topic_data.get("stat_badges", [])
+    topic_name = topic_data.get("topic", "")
+
+    if not api_key or not claims:
+        print("⚠️ Fact-check skipped (no API key or no stat badges to check).")
+        return {"checked": False, "verified": None, "reason": "no api key or no claims"}
+
+    if not USE_NEW_SDK:
+        print("⚠️ Fact-check needs the new google-genai SDK for Search grounding; skipping (legacy SDK detected).")
+        return {"checked": False, "verified": None, "reason": "legacy sdk has no grounding support"}
+
+    prompt = (
+        f'Using Google Search, verify whether these claims about "{topic_name}" are factually accurate: '
+        f'{claims}. Reply with ONLY raw JSON, no markdown: '
+        f'{{"verified": true or false, "notes": "one sentence explanation"}}'
+    )
+
+    try:
+        client = genai.Client(api_key=api_key)
+        config = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
+        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt, config=config)
+        text = response.text if response else None
+        if not text:
+            print("⚠️ Fact-check returned an empty response; continuing without verification.")
+            return {"checked": False, "verified": None, "reason": "empty grounding response"}
+
+        clean = text.replace("```json", "").replace("```", "").strip()
+        result = json.loads(clean)
+        verified = result.get("verified")
+        notes = result.get("notes", "")
+
+        if verified is False:
+            print(f"⚠️ FACT-CHECK WARNING for '{topic_name}': {notes}")
+        elif verified is True:
+            print(f"✅ Fact-check passed for '{topic_name}': {notes}")
+        else:
+            print(f"⚠️ Fact-check inconclusive for '{topic_name}': {notes}")
+
+        return {"checked": True, "verified": verified, "notes": notes}
+    except Exception as e:
+        print(f"⚠️ Fact-check pass failed, continuing anyway ({e}).")
+        return {"checked": False, "verified": None, "reason": str(e)}
+
+# ==========================================
 # 7. KEN BURNS MOTION & MIXED MEDIA ENGINE
 # ==========================================
 def create_ken_burns_clip(image_file, output_clip, motion_type="zoom_in", filter_style="normal", duration=CLIP_DURATION, fps=FPS):
@@ -481,9 +542,146 @@ def create_ken_burns_clip(image_file, output_clip, motion_type="zoom_in", filter
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-async def download_mixed_media_broll(scenes):
-    print("\n3️⃣ Assembling Mixed-Media Scenes (HD Videos + Ken Burns Motion)...")
+def search_wikimedia_commons(query, timeout=10):
+    """Free, no-key API. Good for real historical photos and scanned documents
+    with a genuine license record — used for 'archival' scenes in
+    History/Medical/Mysteries pillars."""
+    import requests
+    try:
+        headers = {"User-Agent": "ShortsBot/1.0 (advanced-edit pipeline)"}
+        search_params = {
+            "action": "query", "format": "json", "list": "search",
+            "srsearch": f"{query} filetype:bitmap", "srnamespace": 6, "srlimit": 5,
+        }
+        res = requests.get(WIKIMEDIA_API_URL, params=search_params, timeout=timeout, headers=headers)
+        if res.status_code != 200:
+            return None
+        results = res.json().get("query", {}).get("search", [])
+        if not results:
+            return None
+
+        for item in results:
+            title = item.get("title")
+            info_params = {
+                "action": "query", "format": "json", "prop": "imageinfo",
+                "titles": title, "iiprop": "url|extmetadata", "iiurlwidth": 1600,
+            }
+            info_res = requests.get(WIKIMEDIA_API_URL, params=info_params, timeout=timeout, headers=headers)
+            if info_res.status_code != 200:
+                continue
+            pages = info_res.json().get("query", {}).get("pages", {})
+            for _, page in pages.items():
+                imageinfo = page.get("imageinfo")
+                if not imageinfo:
+                    continue
+                info = imageinfo[0]
+                url = info.get("thumburl") or info.get("url")
+                if not url or not url.lower().split("?")[0].endswith((".jpg", ".jpeg", ".png")):
+                    continue
+                license_name = info.get("extmetadata", {}).get("LicenseShortName", {}).get("value", "Unknown license")
+                return {"url": url, "license": license_name, "title": title, "source": "wikimedia_commons"}
+        return None
+    except Exception as e:
+        print(f"  ⚠️ Wikimedia Commons search error: {e}")
+        return None
+
+def search_nasa_images(query, timeout=10):
+    """NASA's Images and Video Library API — fully public, no key required.
+    Real mission photography for the Space pillar instead of generic stock."""
+    import requests
+    try:
+        res = requests.get(NASA_IMAGES_SEARCH_URL, params={"q": query, "media_type": "image"}, timeout=timeout)
+        if res.status_code != 200:
+            return None
+        items = res.json().get("collection", {}).get("items", [])
+        if not items:
+            return None
+        item = items[0]
+        links = item.get("links", [])
+        url = next((l["href"] for l in links if l.get("render") == "image"), None) or (links[0].get("href") if links else None)
+        if not url:
+            return None
+        title = item.get("data", [{}])[0].get("title", query)
+        return {"url": url, "license": "NASA media usage guidelines (public domain)", "title": title, "source": "nasa"}
+    except Exception as e:
+        print(f"  ⚠️ NASA Images search error: {e}")
+        return None
+
+def pick_source_order(pillar, source_hint):
+    """Decides which source to try first for a given scene. Archival-hinted
+    scenes go to the real-photo APIs first; stock-hinted scenes go straight
+    to Pexels, only falling back to archival sources if Pexels comes up empty."""
+    pillar_l = (pillar or "").lower()
+    is_space = "space" in pillar_l or "astro" in pillar_l
+    if source_hint == "archival":
+        return ["nasa", "wikimedia", "pexels"] if is_space else ["wikimedia", "nasa", "pexels"]
+    return ["pexels", "wikimedia", "nasa"]
+
+def _fetch_image_and_kenburns(url, clip_name, motion, f_style, label):
+    import requests
+    try:
+        raw_img = f"raw_{clip_name}.jpg"
+        img_bytes = requests.get(url, timeout=20, headers={"User-Agent": "ShortsBot/1.0"}).content
+        with open(raw_img, "wb") as f:
+            f.write(img_bytes)
+        create_ken_burns_clip(raw_img, clip_name, motion_type=motion, filter_style=f_style, duration=CLIP_DURATION)
+        return True
+    except Exception as e:
+        print(f"  ⚠️ {label} download/render error: {e}")
+        return False
+
+def _try_pexels(query, media_type, motion, f_style, clip_name, api_key, scene_num, total_scenes):
+    """Returns (downloaded: bool, license_label: str)."""
+    import requests
+    headers = {"Authorization": api_key}
+
+    if media_type == "video":
+        try:
+            url = f"https://api.pexels.com/videos/search?query={query}&per_page=1&orientation=portrait"
+            res = requests.get(url, headers=headers, timeout=10)
+            if res.status_code == 200:
+                videos = res.json().get("videos", [])
+                if videos:
+                    vf_list = videos[0].get("video_files", [])
+                    best_link = next((vf["link"] for vf in vf_list if vf.get("quality") == "hd"), vf_list[0]["link"] if vf_list else None)
+                    if best_link:
+                        raw_file = f"raw_{clip_name}"
+                        v_res = requests.get(best_link, timeout=20)
+                        with open(raw_file, "wb") as f:
+                            f.write(v_res.content)
+                        subprocess.run([
+                            "ffmpeg", "-y", "-i", raw_file,
+                            "-t", str(CLIP_DURATION), "-r", str(FPS),
+                            "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,"
+                                   "eq=contrast=1.08:saturation=1.15",
+                            "-c:v", "libx264", "-pix_fmt", "yuv420p", clip_name
+                        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        print(f"  🎬 [VIDEO Scene {scene_num}/{total_scenes}] Pexels: '{query}'")
+                        return True, "Pexels License"
+        except Exception as err:
+            print(f"  ⚠️ Pexels video search error: {err}")
+
+    try:
+        photo_url = f"https://api.pexels.com/v1/search?query={query}&per_page=1&orientation=portrait"
+        p_res = requests.get(photo_url, headers=headers, timeout=10)
+        if p_res.status_code == 200:
+            photos = p_res.json().get("photos", [])
+            if photos:
+                img_link = photos[0]["src"].get("large2x") or photos[0]["src"].get("original")
+                if img_link:
+                    downloaded = _fetch_image_and_kenburns(img_link, clip_name, motion, f_style, "Pexels")
+                    if downloaded:
+                        print(f"  🖼️ [PHOTO Scene {scene_num}/{total_scenes}] Pexels Ken Burns {motion.upper()}: '{query}'")
+                        return True, "Pexels License"
+    except Exception as err:
+        print(f"  ⚠️ Pexels photo search error: {err}")
+
+    return False, None
+
+async def download_mixed_media_broll(scenes, pillar=""):
+    print("\n3️⃣ Assembling Mixed-Media Scenes (Archival + HD Stock + Ken Burns Motion)...")
     clips = []
+    manifest = []
     pexels_api_key = os.environ.get("PEXELS_API_KEY")
 
     for i, sc in enumerate(scenes, 1):
@@ -491,56 +689,29 @@ async def download_mixed_media_broll(scenes):
         m_type = sc.get("media_type", "video")
         motion = sc.get("motion", "zoom_in")
         f_style = sc.get("filter", "normal")
+        source_hint = sc.get("source_hint", "stock")
         clip_name = f"clip_{i}.mp4"
+
         downloaded = False
+        used_source, used_license = None, None
 
-        if pexels_api_key:
-            import requests
-            headers = {"Authorization": pexels_api_key}
-            if m_type == "video":
-                try:
-                    url = f"https://api.pexels.com/videos/search?query={q}&per_page=1&orientation=portrait"
-                    res = requests.get(url, headers=headers, timeout=10)
-                    if res.status_code == 200:
-                        videos = res.json().get("videos", [])
-                        if videos:
-                            vf_list = videos[0].get("video_files", [])
-                            best_link = next((vf["link"] for vf in vf_list if vf.get("quality") == "hd"), vf_list[0]["link"] if vf_list else None)
-                            if best_link:
-                                raw_file = f"raw_{clip_name}"
-                                v_res = requests.get(best_link, timeout=20)
-                                with open(raw_file, "wb") as f:
-                                    f.write(v_res.content)
-                                subprocess.run([
-                                    "ffmpeg", "-y", "-i", raw_file,
-                                    "-t", str(CLIP_DURATION), "-r", str(FPS),
-                                    "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,"
-                                           "eq=contrast=1.08:saturation=1.15",
-                                    "-c:v", "libx264", "-pix_fmt", "yuv420p", clip_name
-                                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                                downloaded = True
-                                print(f"  🎬 [VIDEO Scene {i}/{len(scenes)}] '{q}'")
-                except Exception as err:
-                    print(f"  ⚠️ Video search error: {err}")
-
-            if not downloaded:
-                try:
-                    photo_url = f"https://api.pexels.com/v1/search?query={q}&per_page=1&orientation=portrait"
-                    p_res = requests.get(photo_url, headers=headers, timeout=10)
-                    if p_res.status_code == 200:
-                        photos = p_res.json().get("photos", [])
-                        if photos:
-                            img_link = photos[0]["src"].get("large2x") or photos[0]["src"].get("original")
-                            if img_link:
-                                raw_img = f"raw_img_{i}.jpg"
-                                img_bytes = requests.get(img_link, timeout=20).content
-                                with open(raw_img, "wb") as f:
-                                    f.write(img_bytes)
-                                create_ken_burns_clip(raw_img, clip_name, motion_type=motion, filter_style=f_style, duration=CLIP_DURATION)
-                                downloaded = True
-                                print(f"  🖼️ [PHOTO Scene {i}/{len(scenes)}] Ken Burns {motion.upper()}: '{q}'")
-                except Exception as err:
-                    print(f"  ⚠️ Photo search error: {err}")
+        for source in pick_source_order(pillar, source_hint):
+            if downloaded:
+                break
+            if source == "wikimedia":
+                result = search_wikimedia_commons(q)
+                if result and _fetch_image_and_kenburns(result["url"], clip_name, motion, f_style, "Wikimedia Commons"):
+                    downloaded, used_source, used_license = True, result["source"], result["license"]
+                    print(f"  📜 [ARCHIVAL Scene {i}/{len(scenes)}] Wikimedia Commons: '{q}' ({used_license})")
+            elif source == "nasa":
+                result = search_nasa_images(q)
+                if result and _fetch_image_and_kenburns(result["url"], clip_name, motion, f_style, "NASA Images"):
+                    downloaded, used_source, used_license = True, result["source"], result["license"]
+                    print(f"  🚀 [ARCHIVAL Scene {i}/{len(scenes)}] NASA Images: '{q}' ({used_license})")
+            elif source == "pexels" and pexels_api_key:
+                downloaded, used_license = _try_pexels(q, m_type, motion, f_style, clip_name, pexels_api_key, i, len(scenes))
+                if downloaded:
+                    used_source = "pexels"
 
         if not downloaded:
             print(f"  🎬 [SYNTHETIC Scene {i}/{len(scenes)}] '{q}'...")
@@ -550,10 +721,18 @@ async def download_mixed_media_broll(scenes):
                 "-vf", f"drawtext=text='Scene {i} - {q[:15]}':fontcolor=yellow:fontsize=45:x=(w-text_w)/2:y=(h-text_h)/2",
                 "-c:v", "libx264", "-pix_fmt", "yuv420p", clip_name
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            used_source, used_license = "synthetic_placeholder", "n/a"
 
         clips.append(clip_name)
+        manifest.append({"scene": i, "query": q, "source_hint": source_hint, "source": used_source, "license": used_license})
 
-    print(f"  ✅ {len(clips)} mixed-media scenes ready!")
+    try:
+        with open("broll_manifest.json", "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"⚠️ Failed to save broll_manifest.json: {e}")
+
+    print(f"  ✅ {len(clips)} mixed-media scenes ready! (source manifest saved to broll_manifest.json)")
     return clips
 
 # ==========================================
@@ -709,10 +888,28 @@ def upload_to_youtube(video_file, title, description, tags=None):
 # MASTER PIPELINE RUNNER
 # ==========================================
 async def run_master_pipeline():
-    print("✅ Autonomous AI Director Pipeline Initialized (ver7 — advanced edit)!\n")
+    print("✅ Autonomous AI Director Pipeline Initialized (ver8 — archival b-roll + fact-check)!\n")
     cleanup_temp_files()
 
     topic_data = await discover_viral_topic()
+
+    # Fact-check pass (ver8): verify the script's own stat badges via grounded
+    # search before locking the topic in. Fails open by default.
+    fact_check_result = await fact_check_claims(topic_data)
+    if STRICT_FACT_CHECK and fact_check_result.get("verified") is False:
+        print("🔁 STRICT_FACT_CHECK is on and the topic failed verification — swapping to a vetted fallback topic.")
+        used_topics = load_used_topics()
+        used_names = [t.get("topic") for t in used_topics if t.get("topic")]
+        pool = [t for t in FALLBACK_TOPICS_POOL if t.get("topic") not in used_names] or FALLBACK_TOPICS_POOL
+        topic_data = random.choice(pool)
+        save_used_topic(topic_data.get("title"), topic_data.get("topic"), topic_data.get("pillar"))
+        fact_check_result = {"checked": True, "verified": True, "notes": "Swapped to pre-vetted fallback topic."}
+
+    try:
+        with open("fact_check_log.json", "w", encoding="utf-8") as f:
+            json.dump(fact_check_result, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"⚠️ Failed to save fact_check_log.json: {e}")
 
     stat_badges = topic_data.get("stat_badges", ["17,500 MPH"])
     for i, badge in enumerate(stat_badges):
@@ -725,7 +922,7 @@ async def run_master_pipeline():
     mixed_audio = mix_voiceover_and_bgm(faded_vo, raw_bgm)
 
     scenes = topic_data.get("scenes", [])
-    clips = await download_mixed_media_broll(scenes)
+    clips = await download_mixed_media_broll(scenes, pillar=topic_data.get("pillar", ""))
 
     output_video = "final_output.mp4"
     render_professional_short(clips, mixed_audio, ass_captions, stat_badges, output_filename=output_video)
@@ -734,7 +931,7 @@ async def run_master_pipeline():
     video_description = topic_data.get("description", f"{script_text}\n\n#Shorts #Viral #Facts")
     upload_to_youtube(output_video, title=video_title, description=video_description)
 
-    print("\n🚀 Autonomous AI Director pipeline (ver7) finished successfully!")
+    print("\n🚀 Autonomous AI Director pipeline (ver8) finished successfully!")
 
 if __name__ == "__main__":
     try:
