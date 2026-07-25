@@ -1,38 +1,48 @@
-name: Generate & Upload YouTube Short (2x/day)
+name: YouTube Shorts Pipeline
 
 on:
-  schedule:
-    - cron: '0 3 * * *'
-    - cron: '0 15 * * *'
   workflow_dispatch: {}
+  schedule:
+    # Two runs per day, ~12 hours apart (UTC). Adjust to your preferred times.
+    - cron: "0 12 * * *"
+    - cron: "0 0 * * *"
+
+# Prevents a second run from starting while one is still in progress.
+# This is the root cause of the "non-fast-forward" push error: two
+# overlapping runs both trying to commit used_topics.json.
+concurrency:
+  group: shorts-pipeline
+  cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
-  generate-short:
+  build-and-upload:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: main
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install system dependencies
+      - name: Install system dependencies (ffmpeg, fonts)
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg fonts-dejavu-core
 
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Run the Shorts generation pipeline
+      - name: Run pipeline
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
@@ -41,23 +51,45 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: python shorts_pipeline.py
 
-      - name: Upload video as workflow artifact (backup)
+      - name: Upload rendered short as artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: short-video-${{ github.run_id }}
           path: |
             final_output.mp4
-            voiceover.mp3
-            captions.ass
-            broll_manifest.json
-            fact_check_log.json
+            used_topics.json
+            media_sources.json
           retention-days: 14
-          if-no-files-found: ignore
 
-      - name: Commit & Push updated topic history
-        if: always()
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Update topic history [skip ci]"
-          file_pattern: "used_topics.json"
+      - name: Commit updated topic history
+        run: |
+          git config user.name "shorts-bot"
+          git config user.email "shorts-bot@users.noreply.github.com"
+
+          if git diff --quiet -- used_topics.json; then
+            echo "No topic-history changes to commit."
+            exit 0
+          fi
+
+          git add used_topics.json
+          git commit -m "Update topic history [skip ci]"
+
+          # Rebase on top of the latest remote main and retry the push a
+          # few times in case another job lands a commit in between.
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            if git rebase origin/main; then
+              if git push origin HEAD:main; then
+                echo "Push succeeded on attempt $attempt."
+                exit 0
+              fi
+            else
+              git rebase --abort || true
+            fi
+            echo "Push attempt $attempt failed, retrying..."
+            sleep $((attempt * 5))
+          done
+
+          echo "Failed to push topic history after retries."
+          exit 1
