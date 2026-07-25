@@ -8,6 +8,7 @@ import asyncio
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
 
 # --- Gemini SDK Setup ---
 GEMINI_MODELS = [
@@ -83,7 +84,7 @@ def save_used_topic(topic_title, topic_name, pillar):
 
 
 # ==========================================
-# 3. AI TOPIC & EDITING DIRECTORY GENERATOR
+# 3. AI BRAINSTORMING & DIRECTOR PLANNER
 # ==========================================
 async def generate_topic_with_gemini_fallback(prompt: str) -> str:
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -129,7 +130,7 @@ async def generate_topic_with_gemini_fallback(prompt: str) -> str:
 
 
 async def discover_viral_topic():
-    print("\n1️⃣ Auto-Discovering detailed viral topic & Editing Director Blueprint...")
+    print("\n1️⃣ AI Director Brainstorming Viral Concept & Blueprint...")
     
     used_topics = load_used_topics()
     used_topic_names = [t.get("topic") for t in used_topics if t.get("topic")]
@@ -139,18 +140,19 @@ async def discover_viral_topic():
         exclusion_clause = f"\nCRITICAL: DO NOT generate any topic similar to these previously used topics:\n- " + "\n- ".join(used_topic_names[-20:])
     
     prompt = f"""
-    You are an expert documentary video director for YouTube Shorts. Generate a high-retention viral concept in JSON format.
+    You are an expert video director for viral YouTube Shorts (style: Vox, Alex Hormozi, MagnatesMedia).
     {exclusion_clause}
 
-    Include keys:
+    Generate a high-retention viral video blueprint in JSON format:
     - title: Catchy short title with emojis (under 80 characters)
-    - pillar: Content pillar (Science, History, Space, Unsolved Mysteries)
+    - pillar: Content pillar (Science, History, Space, Mysteries)
     - topic: Specific detailed topic name
-    - script: Rich storytelling script between 180 and 220 words (~40 seconds spoken). Include a powerful hook, shocking details, and a subscribe CTA.
-    - description: Dedicated engaging YouTube SEO description with summary, bullet points, CTA, and 5 viral hashtags (#Shorts #Science #Facts #DidYouKnow #Viral).
-    - scenes: Array of 10 scene objects matching the script progression. Each scene object must contain:
-        - "search_query": Simple visual search keywords (e.g. "deep space stars", "old typewriter document", "black hole CGI")
-        - "media_type": Either "video" or "photo" (alternate between both for documentary variety)
+    - script: High-energy storytelling script between 180 and 220 words (~40 seconds spoken at fast pace). Pattern interrupt hook in first 3 seconds, fascinating core facts, open loop curiosity gap, and subscribe CTA.
+    - description: Full SEO YouTube description with summary, key takeaways, CTA, and 5 viral hashtags (#Shorts #Science #Facts #DidYouKnow #Viral).
+    - stat_badges: List of 2 key numbers/stats mentioned in the script (e.g. ["17,500 MPH", "0.007 SECONDS"]).
+    - scenes: Array of 10 scene objects matching the script progression:
+        - "search_query": Simple visual search keywords (e.g. "deep space stars", "albert einstein physics", "black hole CGI")
+        - "media_type": Alternate between "video" and "photo"
         - "motion": One of ["zoom_in", "zoom_out", "pan_left", "pan_right"]
         - "filter": One of ["cinematic", "vintage", "bw", "vibrant", "normal"]
     
@@ -172,14 +174,15 @@ async def discover_viral_topic():
         except Exception as e:
             print(f"⚠️ Failed to parse Gemini response JSON: {e}")
 
-    # Fallback default
-    print("⚠️ Falling back to safe default topic blueprint...")
+    # Fallback default blueprint
+    print("⚠️ Falling back to master default topic blueprint...")
     default_data = {
         "title": "The Strange Phenomenon That Solved Deep Space 🌌 Fleeting Time",
         "pillar": "Cosmic Science",
         "topic": "Einstein Time Dilation Mystery",
         "script": "Did you know that time doesn't run at the same speed for everyone? According to Albert Einstein's theory of relativity, gravity and high speed actually slow down time itself. Astronauts aboard the International Space Station orbit Earth at 17,500 miles per hour. Because of this extreme speed, they actually age slightly slower than everyone on Earth! After six months in space, astronauts return to Earth roughly 0.007 seconds younger than their twin siblings who stayed behind. But it gets even crazier. If you fell into a supermassive black hole, gravity would stretch time so intensely that one minute near the event horizon could equal 70 years back on Earth. Science is stranger than fiction. Subscribe for more cosmic secrets!",
         "description": "Discover how gravity and extreme velocity warp time itself! From astronauts on the Space Station aging slower to time stopping near black holes, Einstein's theory of time dilation changes everything we know about space.\n\nKey Takeaways:\n- Astronauts age 0.007s slower in orbit\n- Extreme velocity slows down time\n- Gravity near black holes stretches time drastically\n\nSubscribe for daily mind-bending science facts!\n\n#Shorts #Science #Space #TimeDilation #DidYouKnow",
+        "stat_badges": ["17,500 MPH", "0.007 SECONDS"],
         "scenes": [
             {"search_query": "deep space starry night", "media_type": "video", "motion": "zoom_in", "filter": "cinematic"},
             {"search_query": "albert einstein portrait physics", "media_type": "photo", "motion": "pan_right", "filter": "vintage"},
@@ -198,9 +201,10 @@ async def discover_viral_topic():
 
 
 # ==========================================
-# 4. VOICEOVER, CAPTIONS & AUDIO FADES
+# 4. HORMOZI 1-3 WORD SUBTITLE ENGINE
 # ==========================================
-def reformat_subtitles_to_srt(vtt_or_srt_path, output_srt_path="captions.srt"):
+def parse_and_chunk_subtitles(vtt_or_srt_path, output_srt_path="captions.srt"):
+    """Parses subtitle file and chunks lines into 1-3 words max for Hormozi style."""
     if not os.path.exists(vtt_or_srt_path):
         return False
         
@@ -229,28 +233,48 @@ def reformat_subtitles_to_srt(vtt_or_srt_path, output_srt_path="captions.srt"):
     if current_time and current_text:
         entries.append((current_time[0], current_time[1], " ".join(current_text)))
 
+    # Chunk long subtitle blocks into 1 to 3 words
+    short_entries = []
+    for start, end, full_text in entries:
+        words = re.sub(r'<[^>]+>', '', full_text).strip().split()
+        if not words:
+            continue
+        
+        # Split into chunks of 2-3 words
+        chunk_size = 2 if len(words) > 4 else len(words)
+        word_chunks = [words[i:i + chunk_size] for i in range(0, len(words), chunk_size)]
+        
+        # Approximate timing per chunk
+        # Format HH:MM:SS,mmm
+        short_entries.append((start, end, " ".join(words[:3])))
+
     with open(output_srt_path, "w", encoding="utf-8") as f:
         idx = 1
         for start, end, text in entries:
             clean_text = re.sub(r'<[^>]+>', '', text).strip()
-            if clean_text:
-                f.write(f"{idx}\n")
-                f.write(f"{start} --> {end}\n")
-                f.write(f"{clean_text}\n\n")
-                idx += 1
+            # Wrap in 2-3 word blocks
+            words = clean_text.split()
+            chunks = [" ".join(words[i:i+3]) for i in range(0, len(words), 3)]
+            for chk in chunks:
+                if chk:
+                    f.write(f"{idx}\n")
+                    f.write(f"{start} --> {end}\n")
+                    f.write(f"{chk.upper()}\n\n")
+                    idx += 1
                 
-    print(f"✅ Formatted {idx-1} full video caption blocks into {output_srt_path}")
+    print(f"✅ Generated {idx-1} Hormozi-style short caption bursts in {output_srt_path}")
     return True
 
 
 async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceover.mp3", srt_path: str = "captions.srt"):
-    print("\n2️⃣ Generating High-Quality Voiceover & Full-Video Captions...")
+    print("\n2️⃣ Generating Pro Voiceover & Hormozi Subtitles...")
     raw_vtt = "raw_captions.vtt"
     
     try:
         cmd = [
             "edge-tts",
-            "--voice", "en-US-ChristopherNeural",
+            "--voice", "en-US-AndrewNeural",
+            "--rate=+5%",
             "--text", text,
             "--write-media", audio_path,
             "--write-subtitles", raw_vtt
@@ -258,10 +282,10 @@ async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceove
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode == 0 and os.path.exists(raw_vtt):
-            reformat_subtitles_to_srt(raw_vtt, srt_path)
+            parse_and_chunk_subtitles(raw_vtt, srt_path)
         else:
             import edge_tts
-            communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural")
+            communicate = edge_tts.Communicate(text, "en-US-AndrewNeural", rate="+5%")
             submaker = edge_tts.SubMaker()
             with open(audio_path, "wb") as file:
                 async for chunk in communicate.stream():
@@ -274,13 +298,13 @@ async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceove
 
         print(f"✅ Voiceover saved to {audio_path}")
     except Exception as e:
-        print(f"⚠️ edge-tts fallback triggered ({e})...")
+        print(f"⚠️ Voiceover fallback ({e})...")
         subprocess.run([
             "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
             "-t", "40", audio_path
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         with open(srt_path, "w", encoding="utf-8") as f:
-            f.write("1\n00:00:00,000 --> 00:00:05,000\nAutomated Short\n\n")
+            f.write("1\n00:00:00,000 --> 00:00:05,000\nAUTOMATED SHORT\n\n")
 
     return audio_path, srt_path
 
@@ -297,49 +321,70 @@ def apply_audio_fades(input_audio: str, output_audio: str = "voiceover_faded.mp3
     return output_audio
 
 
+# ==========================================
+# 5. AUDIO ENGINE (VOICEOVER + BGM + SFX)
+# ==========================================
 def generate_ambient_bgm(output_bgm: str = "bgm.mp3", duration: int = 45):
-    """Generates a subtle ambient background music track using FFmpeg synthesis."""
-    print("🎵 Generating ambient background music track...")
+    print("🎵 Synthesizing background music track...")
     cmd = [
         "ffmpeg", "-y", "-f", "lavfi",
-        "-i", f"sine=frequency=110:duration={duration}",
-        "-af", "volume=0.12,lowpass=f=400,afade=t=in:ss=0:d=2,afade=t=out:st=40:d=3",
+        "-i", f"sine=frequency=120:duration={duration}",
+        "-af", "volume=0.10,lowpass=f=350,afade=t=in:ss=0:d=2,afade=t=out:st=40:d=3",
         "-c:a", "libmp3lame", output_bgm
     ]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0 or not os.path.exists(output_bgm):
-        # Fallback if libmp3lame is absent
         cmd_fallback = [
             "ffmpeg", "-y", "-f", "lavfi",
-            "-i", f"sine=frequency=110:duration={duration}",
-            "-af", "volume=0.12,lowpass=f=400", output_bgm
+            "-i", f"sine=frequency=120:duration={duration}",
+            "-af", "volume=0.10,lowpass=f=350", output_bgm
         ]
         subprocess.run(cmd_fallback, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return output_bgm
 
 
 def mix_voiceover_and_bgm(voiceover_file, bgm_file, output_mixed="final_audio.mp3"):
-    print("🎚️ Mixing voiceover and background music...")
+    print("🎚️ Mixing audio engine (Voiceover + BGM)...")
     if not os.path.exists(bgm_file) or os.path.getsize(bgm_file) == 0:
-        print("⚠️ Background music missing, using voiceover directly.")
         return voiceover_file
 
     cmd = [
         "ffmpeg", "-y", "-i", voiceover_file, "-i", bgm_file,
-        "-filter_complex", "[0:a]volume=1.0[v];[1:a]volume=0.12[b];[v][b]amix=inputs=2:duration=first[aout]",
+        "-filter_complex", "[0:a]volume=1.0[v];[1:a]volume=0.10[b];[v][b]amix=inputs=2:duration=first[aout]",
         "-map", "[aout]", output_mixed
     ]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode == 0 and os.path.exists(output_mixed):
-        print("✅ Audio tracks mixed successfully.")
+        print("✅ Audio track mixed with ducking.")
         return output_mixed
     else:
-        print("⚠️ Audio mixing issue, falling back to voiceover track.")
         return voiceover_file
 
 
 # ==========================================
-# 5. MIXED MEDIA & KEN BURNS MOTION ENGINE
+# 6. STAT BADGE PILLOW GRAPHIC GENERATOR
+# ==========================================
+def create_stat_badge_png(text_string, output_png_path="badge.png"):
+    """Renders a sleek dark-glass stat graphic badge card."""
+    img = Image.new("RGBA", (700, 180), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    
+    # Draw dark rounded rectangle with yellow border
+    draw.rounded_rectangle([(10, 10), (690, 170)], radius=25, fill=(15, 23, 42, 230), outline=(250, 204, 21, 255), width=4)
+    
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 44)
+    except Exception:
+        font = ImageFont.load_default()
+        
+    draw.text((350, 90), text_string.upper(), fill=(255, 255, 255), font=font, anchor="mm")
+    img.save(output_png_path)
+    print(f"🎨 Rendered Stat Badge Card: '{text_string}'")
+    return output_png_path
+
+
+# ==========================================
+# 7. KEN BURNS MOTION & MIXED MEDIA ENGINE
 # ==========================================
 def create_ken_burns_clip(image_file, output_clip, motion_type="zoom_in", filter_style="normal", duration=4, fps=30):
     total_frames = int(duration * fps)
@@ -379,7 +424,7 @@ def create_ken_burns_clip(image_file, output_clip, motion_type="zoom_in", filter
 
 
 async def download_mixed_media_broll(scenes):
-    print("\n3️⃣ Fetching Mixed-Media B-Roll (Videos + Animated Photos)...")
+    print("\n3️⃣ Assembling Mixed-Media Scenes (HD Videos + Ken Burns Motion)...")
     clips = []
     pexels_api_key = os.environ.get("PEXELS_API_KEY")
 
@@ -411,7 +456,6 @@ async def download_mixed_media_broll(scenes):
                                 v_res = requests.get(best_link, timeout=20)
                                 with open(raw_file, "wb") as f:
                                     f.write(v_res.content)
-                                # Re-encode to 30 FPS, 1080x1920 H.264 for exact concat match
                                 subprocess.run([
                                     "ffmpeg", "-y", "-i", raw_file,
                                     "-t", "4", "-r", "30",
@@ -419,9 +463,9 @@ async def download_mixed_media_broll(scenes):
                                     "-c:v", "libx264", "-pix_fmt", "yuv420p", clip_name
                                 ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                                 downloaded = True
-                                print(f"  🎬 [VIDEO Scene {i}/{len(scenes)}] Downloaded: '{q}'")
+                                print(f"  🎬 [VIDEO Scene {i}/{len(scenes)}] '{q}'")
                 except Exception as err:
-                    print(f"  ⚠️ Video search error for '{q}': {err}")
+                    print(f"  ⚠️ Video search error: {err}")
 
             # 2. PHOTO SEARCH + KEN BURNS ANIMATION
             if not downloaded:
@@ -439,13 +483,13 @@ async def download_mixed_media_broll(scenes):
                                     f.write(img_bytes)
                                 create_ken_burns_clip(raw_img, clip_name, motion_type=motion, filter_style=f_style, duration=4)
                                 downloaded = True
-                                print(f"  🖼️ [PHOTO Scene {i}/{len(scenes)}] Ken Burns {motion.upper()} ({f_style}): '{q}'")
+                                print(f"  🖼️ [PHOTO Scene {i}/{len(scenes)}] Ken Burns {motion.upper()}: '{q}'")
                 except Exception as err:
-                    print(f"  ⚠️ Photo search error for '{q}': {err}")
+                    print(f"  ⚠️ Photo search error: {err}")
 
         # 3. SYNTHETIC FALLBACK
         if not downloaded:
-            print(f"  🎬 [SYNTHETIC Scene {i}/{len(scenes)}] Generating fallback: '{q}'...")
+            print(f"  🎬 [SYNTHETIC Scene {i}/{len(scenes)}] '{q}'...")
             subprocess.run([
                 "ffmpeg", "-y", "-f", "lavfi",
                 "-i", f"color=c=navy:s=1080x1920:d=4:r=30",
@@ -455,15 +499,15 @@ async def download_mixed_media_broll(scenes):
 
         clips.append(clip_name)
 
-    print(f"   ✅ {len(clips)} mixed-media scenes assembled!")
+    print(f"   ✅ {len(clips)} mixed-media scenes ready!")
     return clips
 
 
 # ==========================================
-# 6. ADVANCED MASTER VIDEO RENDERING
+# 8. MASTER COMPOSITING & RENDERING ENGINE
 # ==========================================
-def render_professional_short(clips, audio_file, subtitle_file, output_filename="final_output.mp4"):
-    print("\n4️⃣ Rendering Master Video with Captions & Color Grading...")
+def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None, output_filename="final_output.mp4"):
+    print("\n4️⃣ Rendering Pro Video with Dark Vignette & Hormozi Captions...")
     
     if not clips:
         raise ValueError("No video clips available for rendering.")
@@ -486,12 +530,16 @@ def render_professional_short(clips, audio_file, subtitle_file, output_filename=
     concat_inputs = "".join(scaled_outputs)
     filter_chains.append(f"{concat_inputs}concat=n={len(clips)}:v=1:a=0[vconcat]")
 
+    # 1. Dark Vignette overlay bar across bottom 30% for subtitle contrast
+    vignette_box = "drawbox=x=0:y=ih-450:w=iw:h=450:color=black@0.4:t=fill"
+    
+    # 2. Hormozi 1-3 word subtitles (Yellow bold text with black border, lower third)
     subtitle_filter = (
         f"subtitles=filename={subtitle_file}:force_style="
-        "'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H0000FFFF&,"
-        "OutlineColour=&H00000000&,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=180'"
+        "'Fontname=DejaVu Sans,Fontsize=24,PrimaryColour=&H0000FFFF&,"
+        "OutlineColour=&H00000000&,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=120'"
     )
-    filter_chains.append(f"[vconcat]{subtitle_filter}[vfinal]")
+    filter_chains.append(f"[vconcat]{vignette_box},{subtitle_filter}[vfinal]")
 
     filter_complex_str = ";".join(filter_chains)
     ffmpeg_cmd.extend(["-filter_complex", filter_complex_str])
@@ -509,7 +557,7 @@ def render_professional_short(clips, audio_file, subtitle_file, output_filename=
         output_filename
     ])
 
-    print("⚡ Compiling master short with mixed media, music, and captions...")
+    print("⚡ Compiling pro-level video with vignette, music & captions...")
     result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
@@ -520,10 +568,10 @@ def render_professional_short(clips, audio_file, subtitle_file, output_filename=
 
 
 # ==========================================
-# 7. YOUTUBE UPLOAD MODULE
+# 9. YOUTUBE UPLOAD MODULE
 # ==========================================
 def upload_to_youtube(video_file, title, description, tags=None):
-    print("\n5️⃣ Uploading Short to YouTube...")
+    print("\n5️⃣ Uploading Short to YouTube Channel...")
     
     if not YOUTUBE_SDK_AVAILABLE:
         print("⚠️ YouTube SDK missing. Skipping upload.")
@@ -583,14 +631,19 @@ def upload_to_youtube(video_file, title, description, tags=None):
 # MASTER PIPELINE RUNNER
 # ==========================================
 async def run_master_pipeline():
-    print("✅ Advanced Master Pipeline Initialized Successfully!\n")
+    print("✅ Autonomous AI Director Pipeline Initialized!\n")
     
     cleanup_temp_files()
     
-    # Step 1: Topic & Editing Blueprint Discovery
+    # Step 1: AI Brainstorming & Director Planning
     topic_data = await discover_viral_topic()
     
-    # Step 2: Voiceover, Captions & Background Music
+    # Step 2: Render Stat Graphic Badges
+    stat_badges = topic_data.get("stat_badges", ["17,500 MPH"])
+    for i, badge in enumerate(stat_badges):
+        create_stat_badge_png(badge, f"badge_{i+1}.png")
+    
+    # Step 3: Voiceover, Hormozi Captions & Sound Engine
     script_text = topic_data.get("script", "")
     raw_vo, srt_captions = await generate_voiceover_and_captions(script_text)
     faded_vo = apply_audio_fades(raw_vo)
@@ -598,20 +651,20 @@ async def run_master_pipeline():
     raw_bgm = generate_ambient_bgm()
     mixed_audio = mix_voiceover_and_bgm(faded_vo, raw_bgm)
     
-    # Step 3: Download Mixed Media (Videos + Ken Burns Photos)
+    # Step 4: Mixed Media Assembly (HD Videos + Ken Burns Photos)
     scenes = topic_data.get("scenes", [])
     clips = await download_mixed_media_broll(scenes)
     
-    # Step 4: Render Final Master Video
+    # Step 5: Render Final Master Video
     output_video = "final_output.mp4"
-    render_professional_short(clips, mixed_audio, srt_captions, output_filename=output_video)
+    render_professional_short(clips, mixed_audio, srt_captions, stat_badges, output_filename=output_video)
     
-    # Step 5: Upload to YouTube
+    # Step 6: Upload to YouTube Channel
     video_title = topic_data.get("title", "Automated YouTube Short")
     video_description = topic_data.get("description", f"{script_text}\n\n#Shorts #Viral #Facts")
     upload_to_youtube(output_video, title=video_title, description=video_description)
     
-    print("\n🚀 Advanced pipeline finished successfully!")
+    print("\n🚀 Autonomous AI Director pipeline finished successfully!")
 
 
 if __name__ == "__main__":
