@@ -4,7 +4,7 @@ on:
   workflow_dispatch: {}
   schedule:
     # Two runs per day, ~12 hours apart (UTC). Adjust to your preferred times.
-    - cron: "35 19 * * *"
+    - cron: "07 20 * * *"
     - cron: "0 0 * * *"
 
 # Prevents a second run from starting while one is still in progress.
