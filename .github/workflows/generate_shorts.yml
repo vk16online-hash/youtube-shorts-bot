@@ -14,6 +14,8 @@ jobs:
   generate-short:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write  # needed so the workflow can commit used_topics.json back
 
     steps:
       - name: Checkout repo
@@ -54,3 +56,19 @@ jobs:
             voiceover.mp3
           retention-days: 14
           if-no-files-found: ignore
+
+      # Commit the updated topic-history file back to the repo so future
+      # runs (on a fresh runner) know what's already been made and never
+      # repeat a story. Only commits if the file actually changed.
+      - name: Persist topic history back to repo
+        if: always()
+        run: |
+          git config user.name "shorts-bot"
+          git config user.email "shorts-bot@users.noreply.github.com"
+          git add used_topics.json
+          if git diff --cached --quiet; then
+            echo "No changes to used_topics.json — skipping commit."
+          else
+            git commit -m "Update topic history [skip ci]"
+            git push
+          fi
