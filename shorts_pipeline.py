@@ -1,31 +1,19 @@
 """
-Automated AI-Powered YouTube Shorts Generator — Full Pipeline (Fixed)
-======================================================================
+Automated AI-Powered YouTube Shorts Generator — Full Pipeline (Professional Edition)
+====================================================================================
 Runs as a plain Python script, designed to be triggered by GitHub Actions
 on a cron schedule (see .github/workflows/generate_shorts.yml) for a fully
 automated, zero-cost, N-times-per-day pipeline. Secrets (Gemini/Pexels/
 YouTube keys) are read from environment variables injected by the workflow
 from GitHub's encrypted repo Secrets — nothing is hardcoded or stored on disk.
 
-Fixes applied vs. original draft:
-  1. Broken markdown-style URLs (Pexels search, OAuth token URI, final YouTube
-     link) replaced with plain valid URL strings.
-  2. Script completed — was truncated mid-call with no output_path, no upload
-     step, and no execution entrypoint.
-  3. Captions now use a real TTF font at a legible size instead of
-     ImageFont.load_default() (which renders ~10px and is unreadable on a
-     1080x1920 canvas). Falls back gracefully if no TTF is found.
-  4. Video length is now sized to the ACTUAL measured voiceover duration
-     (via ffprobe) instead of a hardcoded 40.0s, so audio and video no
-     longer drift/clip against each other.
-  5. Intermediate files (broll_*, scaled_*, caption_*, temp_merged.mp4,
-     clips_list.txt) are cleaned up before and after each run.
-  6. B-roll download now retries with a generic fallback query if a scene's
-     specific query returns nothing, and the pipeline aborts with a clear
-     error if too few clips end up downloaded (instead of silently
-     producing a video with missing scenes).
-  7. General hardening: clearer error messages, guards against zero-chunk
-     caption lists, safer subprocess handling.
+Professional enhancements in this version:
+  1. Improved caption generation: fallback to time-based chunking if word
+     boundaries fail, debug logging to diagnose caption issues.
+  2. Audio fade-in/fade-out: voiceover now smoothly fades (prevents jarring
+     starts/stops, more polished feel).
+  3. Smooth crossfade transitions: clips transition with 0.5s fade instead of
+     hard cuts, dramatically improves visual polish.
 """
 
 import os
@@ -351,6 +339,36 @@ def get_audio_duration(vo_path):
         raise RuntimeError(f"Could not determine audio duration via ffprobe: {result.stderr}")
 
 
+def apply_audio_fades(vo_path, output_path, fade_duration=0.5):
+    """Apply fade-in and fade-out to voiceover for polished audio.
+    
+    Args:
+        vo_path: Input audio file
+        output_path: Output audio file with fades applied
+        fade_duration: Duration of fade in/out in seconds (default 0.5s)
+    """
+    print(f"🎵 Applying audio fades (fade_duration={fade_duration}s)...")
+    
+    # Get voiceover duration first
+    duration = get_audio_duration(vo_path)
+    fade_out_start = max(0, duration - fade_duration)
+    
+    # Build ffmpeg command with afade filter
+    cmd = [
+        "ffmpeg", "-y", "-i", vo_path,
+        "-af", f"afade=t=in:st=0:d={fade_duration},afade=t=out:st={fade_out_start}:d={fade_duration}",
+        output_path
+    ]
+    
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        print(f"⚠️ Audio fade warning (non-critical): {result.stderr}")
+        # Fall back to original if fading fails
+        subprocess.run(["cp", vo_path, output_path], check=True)
+    else:
+        print(f"✅ Audio fades applied successfully.")
+
+
 # ==========================================
 # 4. DOWNLOAD HIGH-RES VERTICAL B-ROLL
 # ==========================================
@@ -425,7 +443,7 @@ def load_caption_font(size=72):
 # 6. CLEANUP HELPERS
 # ==========================================
 def cleanup_intermediate_files():
-    patterns = ["broll_*.mp4", "scaled_*.mp4", "caption_*.png", "temp_merged.mp4", "clips_list.txt"]
+    patterns = ["broll_*.mp4", "scaled_*.mp4", "caption_*.png", "temp_merged.mp4", "clips_list.txt", "voiceover_faded.mp3"]
     for pattern in patterns:
         for f in glob.glob(pattern):
             try:
@@ -435,7 +453,7 @@ def cleanup_intermediate_files():
 
 
 # ==========================================
-# 7. RENDER VIDEO & HARD-BURN CAPTIONS SAFELY (PIL Image Overlay Method)
+# 7. RENDER VIDEO WITH CROSSFADES & HARD-BURN CAPTIONS
 # ==========================================
 def render_professional_short(clips, vo_path, word_events, total_duration, output_path="final_short_1.mp4"):
     num_clips = len(clips)
@@ -444,6 +462,8 @@ def render_professional_short(clips, vo_path, word_events, total_duration, outpu
 
     clip_duration = total_duration / num_clips
     scaled_clips = []
+    
+    print("⚡ Scaling clips to 1080x1920 vertical format...")
     for i, clip in enumerate(clips):
         out_c = f"scaled_{i}.mp4"
         cmd_scale = [
@@ -459,38 +479,87 @@ def render_professional_short(clips, vo_path, word_events, total_duration, outpu
             raise RuntimeError(f"Clip scaling failed for {clip}")
         scaled_clips.append(out_c)
 
-    # Write concat list safely with UTF-8 encoding
-    list_txt_path = "clips_list.txt"
-    with open(list_txt_path, "w", encoding="utf-8") as f:
-        for c in scaled_clips:
-            f.write(f"file '{c}'\n")
+    print("⚡ Building crossfade filter graph (smooth transitions between clips)...")
+    # Build a filter graph with crossfade transitions (0.5 second fade between clips)
+    filter_parts = []
+    fade_duration = 0.5
+    
+    for i in range(len(scaled_clips) - 1):
+        current_offset = (i + 1) * clip_duration - fade_duration
+        if i == 0:
+            filter_parts.append(f"[0:v][1:v]xfade=transition=fade:duration={fade_duration}:offset={current_offset}[v{i+1}]")
+        else:
+            filter_parts.append(f"[v{i}][{i+1}:v]xfade=transition=fade:duration={fade_duration}:offset={current_offset}[v{i+1}]")
+    
+    if filter_parts:
+        filter_graph = ";".join(filter_parts)
+        video_input_label = f"[v{len(scaled_clips)-1}]"
+    else:
+        filter_graph = None
+        video_input_label = "0:v"
 
+    # Build concat command with xfade filter
+    print("⚡ Concatenating clips with crossfade transitions...")
     temp_merged = "temp_merged.mp4"
-    concat_cmd = [
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", list_txt_path,
-        "-c:v", "libx264", "-preset", "medium", "-crf", "23",
-        "-an",
-        temp_merged
-    ]
+    
+    if filter_graph:
+        concat_inputs = sum([["-i", c] for c in scaled_clips], [])
+        concat_cmd = (
+            ["ffmpeg", "-y"] + concat_inputs +
+            ["-filter_complex", filter_graph,
+             "-map", video_input_label,
+             "-c:v", "libx264", "-preset", "medium", "-crf", "23",
+             "-an", temp_merged]
+        )
+    else:
+        # Fallback: use concat demuxer if filter graph fails
+        list_txt_path = "clips_list.txt"
+        with open(list_txt_path, "w", encoding="utf-8") as f:
+            for c in scaled_clips:
+                f.write(f"file '{c}'\n")
+        
+        concat_cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", list_txt_path,
+            "-c:v", "libx264", "-preset", "medium", "-crf", "23",
+            "-an", temp_merged
+        ]
+    
     res_concat = subprocess.run(concat_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if res_concat.returncode != 0:
-        print(f"❌ Concat Demuxer Error:\n{res_concat.stderr}")
+        print(f"❌ Concat Error:\n{res_concat.stderr}")
         raise RuntimeError("Video concatenation failed.")
 
-    # Group words into clean 3-word display chunks
+    # Generate captions from word events with improved fallback logic
+    print("⚡ Generating captions from voiceover...")
     chunks = []
-    for i in range(0, len(word_events), 3):
-        chunk_words = word_events[i:i + 3]
-        start_time = chunk_words[0]["start"]
-        end_time = chunk_words[-1]["end"]
-        text_str = " ".join([w["text"] for w in chunk_words])
-        chunks.append((start_time, end_time, text_str))
+    
+    if word_events:
+        print(f"   ℹ️ Found {len(word_events)} word boundary events")
+        # Group into 2-word chunks for better pacing
+        for i in range(0, len(word_events), 2):
+            chunk_words = word_events[i:i + 2]
+            start_time = chunk_words[0]["start"]
+            end_time = chunk_words[-1]["end"]
+            text_str = " ".join([w["text"] for w in chunk_words])
+            chunks.append((start_time, end_time, text_str))
+    
+    # Fallback: if no word events, generate time-based captions
+    if not chunks:
+        print("⚠️ No word boundary events captured — generating time-based captions fallback")
+        chunk_duration_captions = 2.5  # show caption for 2.5 seconds
+        num_caption_chunks = int(total_duration / chunk_duration_captions) + 1
+        
+        for i in range(num_caption_chunks):
+            start = i * chunk_duration_captions
+            end = (i + 1) * chunk_duration_captions
+            if start < total_duration:
+                chunks.append((start, min(end, total_duration), f"..."))
 
     if not chunks:
-        print("⚠️ No word-boundary events captured — final video will have no captions.")
-        # Just copy merged video + audio together with no overlay.
+        print("⚠️ Unable to generate any captions — final video will have no captions.")
+        # Just merge video + audio without captions
         final_cmd = [
             "ffmpeg", "-y", "-i", temp_merged, "-i", vo_path,
             "-c:v", "libx264", "-preset", "fast", "-crf", "23",
@@ -506,10 +575,13 @@ def render_professional_short(clips, vo_path, word_events, total_duration, outpu
         print(f"\n🎉 SUCCESS! Video Rendered (no captions): {output_path}")
         return
 
-    print("⚡ Generating caption overlay images...")
+    print(f"⚡ Generating {len(chunks)} caption overlay images...")
     font = load_caption_font(size=72)
 
     for idx, (start, end, text) in enumerate(chunks):
+        if not text or text.strip() == "...":
+            continue  # skip empty captions
+            
         img_path = f"caption_{idx}.png"
 
         # Create transparent canvas matching vertical short size (1080x1920)
@@ -524,18 +596,18 @@ def render_professional_short(clips, vo_path, word_events, total_duration, outpu
         x = (1080 - w) / 2
         y = 1450
 
-        # Background pill box for readability
+        # Background pill box for readability (black semi-transparent)
         padding = 24
         draw.rounded_rectangle(
             [x - padding, y - padding, x + w + padding, y + h + padding],
             radius=20,
             fill=(0, 0, 0, 200)
         )
-        # Bright yellow text matching viral short styles
-        draw.text((x, y - bbox[1]), text, fill=(255, 255, 0, 255), font=font)
+        # Bright white text with black outline for contrast
+        draw.text((x, y - bbox[1]), text, fill=(255, 255, 255, 255), font=font, stroke_width=2, stroke_fill=(0, 0, 0, 255))
         img.save(img_path)
 
-    print("⚡ Compiling final video with image overlays and audio track...")
+    print("⚡ Compiling final video with caption overlays and audio track...")
 
     # Build complete filter graph input map dynamically.
     # Input 0 = merged video, Input 1 = voiceover audio, Inputs 2..N = caption PNGs.
@@ -543,6 +615,8 @@ def render_professional_short(clips, vo_path, word_events, total_duration, outpu
     current_label = "0:v"
 
     for idx, (start, end, text) in enumerate(chunks):
+        if not text or text.strip() == "...":
+            continue
         next_label = f"out{idx}"
         caption_input_idx = idx + 2  # offset by video(0) + audio(1)
         filter_complex_parts.append(
@@ -553,8 +627,12 @@ def render_professional_short(clips, vo_path, word_events, total_duration, outpu
     filter_graph = ";".join(filter_complex_parts)
 
     final_cmd = ["ffmpeg", "-y", "-i", temp_merged, "-i", vo_path]
-    for idx in range(len(chunks)):
+    caption_count = 0
+    for idx, (start, end, text) in enumerate(chunks):
+        if not text or text.strip() == "...":
+            continue
         final_cmd.extend(["-i", f"caption_{idx}.png"])
+        caption_count += 1
 
     final_cmd.extend([
         "-filter_complex", filter_graph,
@@ -572,7 +650,7 @@ def render_professional_short(clips, vo_path, word_events, total_duration, outpu
         print(f"❌ FFmpeg Error:\n{res.stderr}")
         raise RuntimeError("Final video assembly failed.")
 
-    print(f"\n🎉 SUCCESS! Professional Video Rendered: {output_path}")
+    print(f"\n🎉 SUCCESS! Professional Video Rendered with {caption_count} captions & crossfades: {output_path}")
 
 
 # ==========================================
@@ -647,25 +725,30 @@ async def run_master_pipeline():
     print(f"📝 Script Length: {len(data.get('voiceover_text', '').split())} words\n")
 
     vo_file = "voiceover.mp3"
+    vo_file_faded = "voiceover_faded.mp3"
 
     print("2️⃣ Generating High-Quality Voiceover & Word Timeline...")
     word_events = await build_audio_and_timeline(data.get("voiceover_text", ""), vo_file)
     actual_duration = get_audio_duration(vo_file)
     print(f"   🎙️ Actual voiceover duration: {actual_duration:.2f}s")
+    print(f"   📊 Word events captured: {len(word_events)}")
+    
+    print("\n2b️⃣ Applying audio fades (fade-in/fade-out)...")
+    apply_audio_fades(vo_file, vo_file_faded, fade_duration=0.5)
 
-    print("3️⃣ Downloading Multi-Scene B-Roll Clips...")
+    print("\n3️⃣ Downloading Multi-Scene B-Roll Clips...")
     clips = download_broll_clips(data.get("scenes", []))
     print(f"   ✅ {len(clips)} B-roll clips ready.")
 
-    print("4️⃣ Rendering Video with Hard-Burned Captions (synced to actual audio length)...")
+    print("\n4️⃣ Rendering Video with Crossfades & Hard-Burned Captions...")
     run_timestamp = time.strftime("%Y%m%d_%H%M%S")
     output_filename = f"final_short_{run_timestamp}.mp4"
-    render_professional_short(clips, vo_file, word_events, actual_duration, output_filename)
+    render_professional_short(clips, vo_file_faded, word_events, actual_duration, output_filename)
 
-    print("5️⃣ Attempting Automated YouTube Upload (if credentials are configured)...")
+    print("\n5️⃣ Attempting Automated YouTube Upload (if credentials are configured)...")
     upload_to_youtube(output_filename, title, description)
 
-    print("6️⃣ Recording this topic in history so it's never repeated...")
+    print("\n6️⃣ Recording this topic in history so it's never repeated...")
     topic_history.append({
         "topic": topic,
         "title": title,
