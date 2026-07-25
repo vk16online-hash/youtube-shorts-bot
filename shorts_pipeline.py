@@ -14,6 +14,8 @@ Professional enhancements in this version:
      starts/stops, more polished feel).
   3. Smooth crossfade transitions: clips transition with 0.5s fade instead of
      hard cuts, dramatically improves visual polish.
+  4. Gemini quota retry logic: Waits and retries on 429 errors with exponential backoff.
+  5. Empty filter_complex fix: Gracefully handles cases with no captions.
 """
 
 import os
@@ -78,45 +80,23 @@ CHANNEL_NAME = "Origin Point"
 #     (consistent behavior, not random drift)
 CONTENT_PILLARS = [
     {
-        "name": "Accidental Discoveries",
-        "hint": "a major scientific or technological discovery that happened by accident or mistake",
-        "examples": "penicillin, microwave ovens, Velcro, X-rays, vulcanized rubber, Post-it notes, Teflon"
+        "name": "Mundane Objects, Wild Origins",
+        "hint": "something in everyday life that has a shockingly unexpected origin story (eraser, shopping cart, rubber band, paperclip, sticky notes, QWERTY keyboard)",
+        "core_constraint": "Must be something viewers interact with regularly but never wondered about.",
+        "examples": "the eraser from breadcrumbs, the shopping cart designed to trick people into buying more, the QWERTY keyboard designed to SLOW typing, sticky notes from a failed adhesive experiment"
     },
     {
-        "name": "The Uncredited Scientist",
-        "hint": "a scientist or inventor whose critical contribution was overlooked, stolen, or under-credited at the time",
-        "examples": "Rosalind Franklin and DNA, Lise Meitner and nuclear fission, Nikola Tesla, Katherine Johnson"
+        "name": "Scientists Who Almost Missed It",
+        "hint": "a discovery that almost didn't happen because the scientist was about to throw it away, ignore it, or move on",
+        "core_constraint": "Must have a 'one more day' or 'almost tossed it' moment that changed everything.",
+        "examples": "penicillin (messy lab, about to discard), cosmic microwave background (dismissed as antenna noise), LSD (synthesizing something else), plastic wrap (accident at Dow Corning), the microwave (chocolate bar melted in radar field)"
     },
     {
-        "name": "Ancient Tech Too Advanced For Its Time",
-        "hint": "an ancient invention or engineering feat that seems impossibly advanced for when it was built",
-        "examples": "the Antikythera mechanism, Roman concrete, the Baghdad battery, Damascus steel, Greek fire"
-    },
-    {
-        "name": "The Experiment That Changed Everything",
-        "hint": "a single pivotal scientific experiment whose result reshaped an entire field",
-        "examples": "the Miller-Urey experiment, the double-slit experiment, Michelson-Morley, Pavlov's dogs"
-    },
-    {
-        "name": "Mocked or Rejected First",
-        "hint": "an invention or scientific idea that was ridiculed, dismissed, or rejected by experts before it succeeded",
-        "examples": "the telephone, heavier-than-air flight, germ theory, plate tectonics, continental drift"
-    },
-    {
-        "name": "Untold Space Race Moments",
-        "hint": "a lesser-known, high-stakes moment from the history of space exploration",
-        "examples": "the human computers behind early NASA missions, Apollo 13, Soyuz 1, the first Voyager images"
-    },
-    {
-        "name": "Recent Breakthroughs People Underrate",
-        "hint": "a modern scientific breakthrough that is more recent, or more remarkable, than most people realize",
-        "examples": "CRISPR gene editing, mRNA vaccine technology, GPS's relativity correction, ARPANET's true origins"
-    },
-    {
-        "name": "What If It Had Failed",
-        "hint": "a close call or near-failure in science/history where things could easily have gone the other way",
-        "examples": "the Cuban Missile Crisis submarine incident, a vaccine trial that nearly derailed, a near-miss asteroid discovery"
-    },
+        "name": "Crossroads of Genius",
+        "hint": "an invention that required breakthroughs from at least 3 completely different scientific fields intersecting at once",
+        "core_constraint": "Must show how different disciplines collided to enable something world-changing.",
+        "examples": "WiFi (quantum physics + radio engineering + computing), vaccines (probability theory + chemistry + biology), DNA structure (X-ray crystallography + mathematics + biochemistry)"
+    }
 ]
 
 
@@ -190,55 +170,51 @@ def discover_detailed_40s_content(topic_history=None):
 
     def build_prompt():
         return f"""
-    You are writing a script for the YouTube Shorts channel "{CHANNEL_NAME}",
-    a channel dedicated to short, punchy stories about the surprising true
-    history behind scientific discoveries, inventions, and innovations. Every
-    video answers a variant of: "here's the real story behind something you
-    thought you knew."
+You are writing for "{CHANNEL_NAME}", which ONLY covers stories where:
+1. The origin of something is radically different from what people think.
+2. There's a clear, emotional "aha!" moment viewers will actually FEEL.
+3. It connects to something viewers use, know, or interact with in real life.
 
-    Today's content pillar is: "{pillar['name']}" — specifically, {pillar['hint']}.
-    Pick ONE specific, concrete real historical example that fits this pillar
-    (for inspiration, similar past examples in this pillar include: {pillar['examples']}).
+CRITICAL CONSTRAINTS:
+- DO NOT stray into abstract science, mythology, or overly technical history.
+- DO NOT discuss institutional or impersonal histories.
+- Every story must have a protagonist (person or small team).
+- The revelation must be shocking, not boring.
 
-    {already_covered_block}
+Today's pillar: "{pillar['name']}"
+Definition: {pillar['hint']}
+Constraint: {pillar['core_constraint']}
 
-    You MUST pick a topic that is NOT in the already-covered list above.
-    This is critical — the channel's catalog must never repeat a story.
+{already_covered_block}
 
-    Generate a deeply engaging, highly detailed, 40-second viral YouTube Short
-    script (115-130 words) telling that one true story clearly and dramatically.
-    It must have exactly 7 distinct sequential scenes so the B-roll changes
-    every 5 to 6 seconds to keep retention hyper-high.
+YOU MUST NOT REPEAT any topic above. If you do, the entire channel fails.
 
-    Requirements:
-    - Fast, curiosity-driven hook in the first 3 seconds (no throat-clearing).
-    - All facts must be real and historically accurate — no invented details.
-    - End the voiceover_text with this exact outro line, verbatim:
-      "That's the origin point. Follow {CHANNEL_NAME} for the next one."
-    - The pexels_query for each scene must describe realistic, findable stock
-      footage (avoid overly specific historical figures' faces, since stock
-      footage of them won't exist — use eras, settings, objects, and abstract
-      visuals instead, e.g. "vintage laboratory equipment 1920s" rather than
-      a named person).
+Generate a 40-second viral YouTube Short script (115-130 words) that:
+1. HOOK (0-3s): Start with something the viewer KNOWS and uses: "You've used X a thousand times..." or "Everyone knows about Y..."
+2. TENSION (3-20s): Build curiosity about WHY it exists or HOW it started
+3. REVEAL (20-35s): Drop the wild origin they didn't expect
+4. CLOSE (35-40s): End with the exact outro: "That's the origin point. Follow {CHANNEL_NAME} for the next one."
 
-    Return ONLY a JSON object with this exact structure:
-    {{
-      "topic": "Topic Name",
-      "pillar": "{pillar['name']}",
-      "title": "Catchy Title with Emojis",
-      "description": "SEO optimized description with viral hashtags #Shorts #Science #History",
-      "voiceover_text": "Detailed 40-second script containing 115 to 130 words, ending with the exact outro line specified above.",
-      "scenes": [
-        {{"timestamp": "0-6s", "pexels_query": "..."}},
-        {{"timestamp": "6-12s", "pexels_query": "..."}},
-        {{"timestamp": "12-18s", "pexels_query": "..."}},
-        {{"timestamp": "18-24s", "pexels_query": "..."}},
-        {{"timestamp": "24-30s", "pexels_query": "..."}},
-        {{"timestamp": "30-36s", "pexels_query": "..."}},
-        {{"timestamp": "36-40s", "pexels_query": "..."}}
-      ]
-    }}
-    """
+All facts MUST be real and historically accurate. No invented details.
+
+Return ONLY valid JSON:
+{{
+  "topic": "Topic that fits the pillar exactly",
+  "pillar": "{pillar['name']}",
+  "title": "Catchy title with emojis",
+  "description": "SEO optimized description with #Shorts #Science #History",
+  "voiceover_text": "Detailed 40-second script (115-130 words) ending with the exact outro line",
+  "scenes": [
+    {{"timestamp": "0-6s", "pexels_query": "relatable visual for the everyday object/concept"}},
+    {{"timestamp": "6-12s", "pexels_query": "..."}},
+    {{"timestamp": "12-18s", "pexels_query": "..."}},
+    {{"timestamp": "18-24s", "pexels_query": "..."}},
+    {{"timestamp": "24-30s", "pexels_query": "..."}},
+    {{"timestamp": "30-36s", "pexels_query": "..."}},
+    {{"timestamp": "36-40s", "pexels_query": "..."}}
+  ]
+}}
+"""
 
     max_attempts = 3
     last_data = None
@@ -265,7 +241,17 @@ def discover_detailed_40s_content(topic_history=None):
             return data  # unique topic, good to go
 
         except Exception as e:
-            print(f"⚠️ Attempt {attempt} failed: {e}")
+            error_str = str(e)
+            # Check for quota errors (429)
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                if attempt < max_attempts:
+                    wait_time = 60 * attempt  # 60s, 120s, 180s backoff
+                    print(f"⚠️ Attempt {attempt}: Gemini quota exceeded. Waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"⚠️ Attempt {attempt}: Gemini quota exceeded. Max retries reached.")
+            else:
+                print(f"⚠️ Attempt {attempt} failed: {e}")
 
     # All attempts either failed or kept returning duplicates — fall back.
     print("⚠️ Falling back to a safe on-niche default after repeated duplicate/failed attempts.")
@@ -274,32 +260,31 @@ def discover_detailed_40s_content(topic_history=None):
 
 def _fallback_content():
     return {
-        "topic": "The Accidental Discovery of Penicillin",
-        "pillar": "Accidental Discoveries",
-        "title": "The Moldy Mistake That Saved a Billion Lives 🦠💊",
+        "topic": "The Eraser: From Breadcrumbs to Office Staple",
+        "pillar": "Mundane Objects, Wild Origins",
+        "title": "This Humble Eraser Has the Most Embarrassing Origin 😅✏️",
         "description": (
-            "How a messy lab and a forgotten petri dish changed medicine forever. "
-            "#Shorts #Science #History #Penicillin"
+            "You've used one a million times, but the eraser wasn't always rubber. "
+            "Its accidental origin will shock you. #Shorts #Science #History #OfficeLife"
         ),
         "voiceover_text": (
-            "In 1928, a scientist left for vacation without cleaning his lab. "
-            "When he came back, one of his petri dishes was contaminated with mold. "
-            "Most people would have thrown it away. He almost did too. "
-            "But he noticed something strange: bacteria near the mold were dying. "
-            "That mold was Penicillium, and it was killing bacteria on contact. "
-            "That single overlooked, moldy dish became penicillin, the first true "
-            "antibiotic, and it would go on to save hundreds of millions of lives. "
-            "A forgotten mistake in a messy lab became one of medicine's greatest breakthroughs. "
+            "You've held an eraser a thousand times without thinking twice. "
+            "But here's the wild origin: it wasn't invented on purpose at all. "
+            "In the 1770s, a chemist noticed that rubber could rub away pencil marks. "
+            "But the first erasers? They were actually made from breadcrumbs. "
+            "Artists would literally use stale bread to erase charcoal and pencil. "
+            "It wasn't until someone realized rubber worked WAY better that the modern eraser was born. "
+            "An accidental discovery that became a classroom essential. "
             "That's the origin point. Follow Origin Point for the next one."
         ),
         "scenes": [
-            {"pexels_query": "vintage laboratory equipment 1920s"},
-            {"pexels_query": "old scientist notebook writing desk"},
-            {"pexels_query": "petri dish mold macro closeup"},
-            {"pexels_query": "microscope bacteria culture lab"},
-            {"pexels_query": "vintage medicine bottles pharmacy"},
-            {"pexels_query": "hospital ward historical black and white"},
-            {"pexels_query": "modern hospital medicine hopeful"}
+            {"pexels_query": "close-up pencil eraser on paper"},
+            {"pexels_query": "student writing with pencil at desk"},
+            {"pexels_query": "pencil marks on white paper"},
+            {"pexels_query": "old vintage erasers collection"},
+            {"pexels_query": "rubber material texture macro"},
+            {"pexels_query": "classroom pencils and supplies"},
+            {"pexels_query": "modern office desk with erasers"}
         ]
     }
 
@@ -551,92 +536,88 @@ def render_professional_short(clips, vo_path, word_events, total_duration, outpu
         chunk_duration_captions = 2.5  # show caption for 2.5 seconds
         num_caption_chunks = int(total_duration / chunk_duration_captions) + 1
         
+        # Create placeholder captions that won't render (empty text)
         for i in range(num_caption_chunks):
             start = i * chunk_duration_captions
             end = (i + 1) * chunk_duration_captions
             if start < total_duration:
-                chunks.append((start, min(end, total_duration), f"..."))
+                chunks.append((start, min(end, total_duration), ""))
 
-    if not chunks:
-        print("⚠️ Unable to generate any captions — final video will have no captions.")
-        # Just merge video + audio without captions
-        final_cmd = [
-            "ffmpeg", "-y", "-i", temp_merged, "-i", vo_path,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "128k",
-            "-shortest",
-            output_path
-        ]
-        res = subprocess.run(final_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if res.returncode != 0:
-            print(f"❌ FFmpeg Error:\n{res.stderr}")
-            raise RuntimeError("Final video assembly failed.")
-        print(f"\n🎉 SUCCESS! Video Rendered (no captions): {output_path}")
-        return
+    print(f"⚡ Processing {len(chunks)} caption chunks...")
+    
+    # Filter out empty caption text BEFORE generating images
+    valid_chunks = [(s, e, t) for s, e, t in chunks if t and t.strip()]
+    
+    if valid_chunks:
+        print(f"⚡ Generating {len(valid_chunks)} caption overlay images...")
+        font = load_caption_font(size=72)
 
-    print(f"⚡ Generating {len(chunks)} caption overlay images...")
-    font = load_caption_font(size=72)
+        for idx, (start, end, text) in enumerate(valid_chunks):
+            img_path = f"caption_{idx}.png"
 
-    for idx, (start, end, text) in enumerate(chunks):
-        if not text or text.strip() == "...":
-            continue  # skip empty captions
-            
-        img_path = f"caption_{idx}.png"
+            # Create transparent canvas matching vertical short size (1080x1920)
+            img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
 
-        # Create transparent canvas matching vertical short size (1080x1920)
-        img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
+            # Draw a clean high-contrast caption box near the bottom center
+            bbox = draw.textbbox((0, 0), text, font=font)
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
 
-        # Draw a clean high-contrast caption box near the bottom center
-        bbox = draw.textbbox((0, 0), text, font=font)
-        w = bbox[2] - bbox[0]
-        h = bbox[3] - bbox[1]
+            x = (1080 - w) / 2
+            y = 1450
 
-        x = (1080 - w) / 2
-        y = 1450
-
-        # Background pill box for readability (black semi-transparent)
-        padding = 24
-        draw.rounded_rectangle(
-            [x - padding, y - padding, x + w + padding, y + h + padding],
-            radius=20,
-            fill=(0, 0, 0, 200)
-        )
-        # Bright white text with black outline for contrast
-        draw.text((x, y - bbox[1]), text, fill=(255, 255, 255, 255), font=font, stroke_width=2, stroke_fill=(0, 0, 0, 255))
-        img.save(img_path)
+            # Background pill box for readability (black semi-transparent)
+            padding = 24
+            draw.rounded_rectangle(
+                [x - padding, y - padding, x + w + padding, y + h + padding],
+                radius=20,
+                fill=(0, 0, 0, 200)
+            )
+            # Bright white text with black outline for contrast
+            draw.text((x, y - bbox[1]), text, fill=(255, 255, 255, 255), font=font, stroke_width=2, stroke_fill=(0, 0, 0, 255))
+            img.save(img_path)
+    else:
+        print("⚠️ No valid captions to render — final video will have no captions.")
+        valid_chunks = []
 
     print("⚡ Compiling final video with caption overlays and audio track...")
 
     # Build complete filter graph input map dynamically.
     # Input 0 = merged video, Input 1 = voiceover audio, Inputs 2..N = caption PNGs.
-    filter_complex_parts = []
-    current_label = "0:v"
+    if valid_chunks:
+        filter_complex_parts = []
+        current_label = "0:v"
 
-    for idx, (start, end, text) in enumerate(chunks):
-        if not text or text.strip() == "...":
-            continue
-        next_label = f"out{idx}"
-        caption_input_idx = idx + 2  # offset by video(0) + audio(1)
-        filter_complex_parts.append(
-            f"[{current_label}][{caption_input_idx}:v]overlay=enable='between(t,{start},{end})'[{next_label}]"
-        )
-        current_label = next_label
+        for idx, (start, end, text) in enumerate(valid_chunks):
+            next_label = f"out{idx}"
+            caption_input_idx = idx + 2  # offset by video(0) + audio(1)
+            filter_complex_parts.append(
+                f"[{current_label}][{caption_input_idx}:v]overlay=enable='between(t,{start},{end})'[{next_label}]"
+            )
+            current_label = next_label
 
-    filter_graph = ";".join(filter_complex_parts)
+        filter_graph = ";".join(filter_complex_parts)
+        map_label = f"[{current_label}]"
+    else:
+        filter_graph = None
+        map_label = "0:v"
 
     final_cmd = ["ffmpeg", "-y", "-i", temp_merged, "-i", vo_path]
-    caption_count = 0
-    for idx, (start, end, text) in enumerate(chunks):
-        if not text or text.strip() == "...":
-            continue
-        final_cmd.extend(["-i", f"caption_{idx}.png"])
-        caption_count += 1
+    
+    if valid_chunks:
+        for idx in range(len(valid_chunks)):
+            final_cmd.extend(["-i", f"caption_{idx}.png"])
+
+    if filter_graph:
+        final_cmd.extend([
+            "-filter_complex", filter_graph,
+            "-map", map_label,
+        ])
+    else:
+        final_cmd.extend(["-map", "0:v"])
 
     final_cmd.extend([
-        "-filter_complex", filter_graph,
-        "-map", f"[{current_label}]",
         "-map", "1:a",
         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
         "-pix_fmt", "yuv420p",
@@ -650,6 +631,7 @@ def render_professional_short(clips, vo_path, word_events, total_duration, outpu
         print(f"❌ FFmpeg Error:\n{res.stderr}")
         raise RuntimeError("Final video assembly failed.")
 
+    caption_count = len(valid_chunks)
     print(f"\n🎉 SUCCESS! Professional Video Rendered with {caption_count} captions & crossfades: {output_path}")
 
 
