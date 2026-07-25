@@ -12,8 +12,8 @@ from pathlib import Path
 # --- Gemini SDK Setup ---
 GEMINI_MODELS = [
     "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash-8b",
 ]
 
 try:
@@ -199,7 +199,7 @@ async def discover_viral_topic():
 
 
 # ==========================================
-# 4. VOICEOVER & WORD-SYNCED CAPTIONS
+# 4. VOICEOVER, CAPTIONS & AUDIO FADES
 # ==========================================
 def reformat_subtitles_to_srt(vtt_or_srt_path, output_srt_path="captions.srt"):
     if not os.path.exists(vtt_or_srt_path):
@@ -286,6 +286,18 @@ async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceove
     return audio_path, srt_path
 
 
+def apply_audio_fades(input_audio: str, output_audio: str = "voiceover_faded.mp3", fade_duration: float = 0.5):
+    print("\n2b️⃣ Applying audio fades...")
+    cmd = [
+        "ffmpeg", "-y", "-i", input_audio,
+        "-af", f"afade=t=in:ss=0:d={fade_duration},afade=t=out:st=38:d={fade_duration}",
+        output_audio
+    ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print("✅ Audio fades applied successfully.")
+    return output_audio
+
+
 def generate_ambient_bgm(output_bgm: str = "bgm.mp3", duration: int = 45):
     """Generates a subtle ambient background music track using FFmpeg synthesis."""
     print("🎵 Generating ambient background music track...")
@@ -315,7 +327,6 @@ def mix_voiceover_and_bgm(voiceover_file, bgm_file, output_mixed="final_audio.mp
 # 5. MIXED MEDIA & KEN BURNS MOTION ENGINE
 # ==========================================
 def create_ken_burns_clip(image_file, output_clip, motion_type="zoom_in", filter_style="normal", duration=4, fps=30):
-    """Converts a still image into an animated 2D Ken Burns motion clip with color grading."""
     total_frames = int(duration * fps)
     
     if motion_type == "zoom_in":
@@ -335,7 +346,6 @@ def create_ken_burns_clip(image_file, output_clip, motion_type="zoom_in", filter
         x_expr = f"(on/{total_frames})*(iw-iw/zoom)"
         y_expr = "ih/2-(ih/zoom/2)"
 
-    # Filter grading
     color_filter = "eq=contrast=1.1:saturation=1.2"
     if filter_style == "vintage":
         color_filter = "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131"
@@ -386,7 +396,6 @@ async def download_mixed_media_broll(scenes):
                                 v_res = requests.get(best_link, timeout=20)
                                 with open(raw_file, "wb") as f:
                                     f.write(v_res.content)
-                                # Trim to 4 seconds
                                 subprocess.run(["ffmpeg", "-y", "-i", raw_file, "-t", "4", "-c", "copy", clip_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                                 downloaded = True
                                 print(f"  🎬 [VIDEO Scene {i}/{len(scenes)}] Downloaded: '{q}'")
@@ -394,7 +403,7 @@ async def download_mixed_media_broll(scenes):
                     print(f"  ⚠️ Video search error for '{q}': {err}")
 
             # 2. PHOTO SEARCH + KEN BURNS ANIMATION
-            if not downloaded:  # Try photo if video failed or if media_type == 'photo'
+            if not downloaded:
                 try:
                     photo_url = f"https://api.pexels.com/v1/search?query={q}&per_page=1&orientation=portrait"
                     p_res = requests.get(photo_url, headers=headers, timeout=10)
@@ -407,7 +416,6 @@ async def download_mixed_media_broll(scenes):
                                 img_bytes = requests.get(img_link, timeout=20).content
                                 with open(raw_img, "wb") as f:
                                     f.write(img_bytes)
-                                # Apply Ken Burns Motion Effect
                                 create_ken_burns_clip(raw_img, clip_name, motion_type=motion, filter_style=f_style, duration=4)
                                 downloaded = True
                                 print(f"  🖼️ [PHOTO Scene {i}/{len(scenes)}] Ken Burns {motion.upper()} ({f_style}): '{q}'")
@@ -457,7 +465,6 @@ def render_professional_short(clips, audio_file, subtitle_file, output_filename=
     concat_inputs = "".join(scaled_outputs)
     filter_chains.append(f"{concat_inputs}concat=n={len(clips)}:v=1:a=0[vconcat]")
 
-    # Burn-in captions (Bold yellow text with black border, bottom centered)
     subtitle_filter = (
         f"subtitles=filename={subtitle_file}:force_style="
         "'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H0000FFFF&,"
