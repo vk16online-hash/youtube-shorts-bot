@@ -13,7 +13,6 @@ from pathlib import Path
 GEMINI_MODELS = [
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
-    "gemini-1.5-flash-8b",
 ]
 
 try:
@@ -119,8 +118,8 @@ async def generate_topic_with_gemini_fallback(prompt: str) -> str:
             except Exception as err:
                 err_msg = str(err)
                 if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-                    print(f"⚠️ Model {model_name} hit rate limit (429). Waiting 15 seconds...")
-                    await asyncio.sleep(15)
+                    print(f"⚠️ Model {model_name} hit rate limit (429). Waiting 20 seconds...")
+                    await asyncio.sleep(20)
                 else:
                     print(f"⚠️ Model {model_name} failed with error: {err_msg}")
                     break
@@ -287,7 +286,7 @@ async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceove
 
 
 def apply_audio_fades(input_audio: str, output_audio: str = "voiceover_faded.mp3", fade_duration: float = 0.5):
-    print("\n2b️⃣ Applying audio fades...")
+    print("2b️⃣ Applying audio fades...")
     cmd = [
         "ffmpeg", "-y", "-i", input_audio,
         "-af", f"afade=t=in:ss=0:d={fade_duration},afade=t=out:st=38:d={fade_duration}",
@@ -305,22 +304,38 @@ def generate_ambient_bgm(output_bgm: str = "bgm.mp3", duration: int = 45):
         "ffmpeg", "-y", "-f", "lavfi",
         "-i", f"sine=frequency=110:duration={duration}",
         "-af", "volume=0.12,lowpass=f=400,afade=t=in:ss=0:d=2,afade=t=out:st=40:d=3",
-        "-c:a", "aac", output_bgm
+        "-c:a", "libmp3lame", output_bgm
     ]
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0 or not os.path.exists(output_bgm):
+        # Fallback if libmp3lame is absent
+        cmd_fallback = [
+            "ffmpeg", "-y", "-f", "lavfi",
+            "-i", f"sine=frequency=110:duration={duration}",
+            "-af", "volume=0.12,lowpass=f=400", output_bgm
+        ]
+        subprocess.run(cmd_fallback, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return output_bgm
 
 
 def mix_voiceover_and_bgm(voiceover_file, bgm_file, output_mixed="final_audio.mp3"):
     print("🎚️ Mixing voiceover and background music...")
+    if not os.path.exists(bgm_file) or os.path.getsize(bgm_file) == 0:
+        print("⚠️ Background music missing, using voiceover directly.")
+        return voiceover_file
+
     cmd = [
         "ffmpeg", "-y", "-i", voiceover_file, "-i", bgm_file,
         "-filter_complex", "[0:a]volume=1.0[v];[1:a]volume=0.12[b];[v][b]amix=inputs=2:duration=first[aout]",
         "-map", "[aout]", output_mixed
     ]
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    print("✅ Audio tracks mixed successfully.")
-    return output_mixed
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode == 0 and os.path.exists(output_mixed):
+        print("✅ Audio tracks mixed successfully.")
+        return output_mixed
+    else:
+        print("⚠️ Audio mixing issue, falling back to voiceover track.")
+        return voiceover_file
 
 
 # ==========================================
@@ -396,7 +411,13 @@ async def download_mixed_media_broll(scenes):
                                 v_res = requests.get(best_link, timeout=20)
                                 with open(raw_file, "wb") as f:
                                     f.write(v_res.content)
-                                subprocess.run(["ffmpeg", "-y", "-i", raw_file, "-t", "4", "-c", "copy", clip_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                # Re-encode to 30 FPS, 1080x1920 H.264 for exact concat match
+                                subprocess.run([
+                                    "ffmpeg", "-y", "-i", raw_file,
+                                    "-t", "4", "-r", "30",
+                                    "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1",
+                                    "-c:v", "libx264", "-pix_fmt", "yuv420p", clip_name
+                                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                                 downloaded = True
                                 print(f"  🎬 [VIDEO Scene {i}/{len(scenes)}] Downloaded: '{q}'")
                 except Exception as err:
@@ -458,7 +479,7 @@ def render_professional_short(clips, audio_file, subtitle_file, output_filename=
 
     for i in range(len(clips)):
         filter_chains.append(
-            f"[{i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[v{i}]"
+            f"[{i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30[v{i}]"
         )
         scaled_outputs.append(f"[v{i}]")
 
