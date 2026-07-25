@@ -84,6 +84,58 @@ def save_used_topic(topic_title, topic_name, pillar):
 
 
 # ==========================================
+# DYNAMIC FALLBACK TOPICS POOL (VARIETY GUARANTEE)
+# ==========================================
+FALLBACK_TOPICS_POOL = [
+    {
+        "title": "The Moldy Mistake That Saved a Billion Lives 🦠💊",
+        "pillar": "Medical History",
+        "topic": "The Accidental Discovery of Penicillin",
+        "script": "In 1928, Alexander Fleming returned from vacation to find his petri dishes covered in mold. But instead of throwing them away, he noticed something impossible. The mold was completely killing bacteria around it! That single accident led to penicillin, saving over 200 million lives and completely changing modern medicine forever. Subscribe for more crazy history facts!",
+        "description": "How a messy laboratory accident in 1928 led to the discovery of penicillin, the miracle antibiotic that transformed modern medicine!\n\nKey Takeaways:\n- Alexander Fleming discovered penicillin by accident\n- Petri dish mold killed surrounding bacteria\n- Over 200 million lives saved worldwide\n\n#Shorts #Science #History #Penicillin #DidYouKnow",
+        "stat_badges": ["YEAR 1928", "200 MILLION LIVES"],
+        "scenes": [
+            {"search_query": "old scientist laboratory desk", "media_type": "photo", "motion": "zoom_in", "filter": "vintage"},
+            {"search_query": "petri dish bacteria macro", "media_type": "video", "motion": "zoom_out", "filter": "cinematic"},
+            {"search_query": "microscope scientist lab", "media_type": "video", "motion": "pan_right", "filter": "normal"},
+            {"search_query": "vintage medicine pharmacy bottles", "media_type": "photo", "motion": "pan_left", "filter": "vintage"},
+            {"search_query": "modern hospital operating room", "media_type": "video", "motion": "zoom_in", "filter": "vibrant"}
+        ]
+    },
+    {
+        "title": "The Ocean Trench Deeper Than Mount Everest 🌊 Oceanic Abyss",
+        "pillar": "Earth Science",
+        "topic": "Secrets of the Mariana Trench",
+        "script": "Did you know that the deepest point on Earth could swallow Mount Everest whole with miles to spare? The Mariana Trench plunges nearly 36,000 feet into complete darkness. The water pressure at the bottom is over 1,000 times greater than at the surface—enough to crush a submarine like a soda can! Yet bizarre glowing sea creatures thrive down there in total darkness. Subscribe for deep ocean mysteries!",
+        "description": "Explore the terrifying depths of the Mariana Trench, Earth's deepest underwater abyss, reaching nearly 36,000 feet deep!\n\nKey Takeaways:\n- 36,000 feet deep in complete darkness\n- Water pressure 1,000x greater than surface level\n- Glowing creatures thrive in extreme depths\n\n#Shorts #Ocean #DeepSea #EarthFacts #DidYouKnow",
+        "stat_badges": ["36,000 FEET", "1,000X PRESSURE"],
+        "scenes": [
+            {"search_query": "deep blue ocean water abyss", "media_type": "video", "motion": "zoom_in", "filter": "cinematic"},
+            {"search_query": "underwater submarine deep sea", "media_type": "photo", "motion": "pan_left", "filter": "cinematic"},
+            {"search_query": "bioluminescent sea creature glowing", "media_type": "video", "motion": "zoom_out", "filter": "vibrant"},
+            {"search_query": "mount everest snow mountain peak", "media_type": "photo", "motion": "pan_right", "filter": "normal"},
+            {"search_query": "deep ocean dark underwater", "media_type": "video", "motion": "zoom_in", "filter": "cinematic"}
+        ]
+    },
+    {
+        "title": "The Golden Record Sent to Aliens 🚀 Voyaging Beyond Earth",
+        "pillar": "Space Exploration",
+        "topic": "Voyager 1 Golden Record Message",
+        "script": "In 1977, NASA launched Voyager 1 into deep space carrying a 12-inch phonograph record made of solid gold. On it, scientists recorded natural sounds of Earth, music from Beethoven, and greetings in 55 human languages. Voyager 1 is now over 15 billion miles away in interstellar space, traveling at 38,000 miles per hour. It will float through the galaxy for billions of years long after Earth is gone. Subscribe for cosmic space stories!",
+        "description": "Discover the Voyager Golden Record, humanity's time capsule sent to interstellar space for alien civilizations to find!\n\nKey Takeaways:\n- Solid gold record carrying Earth sounds and music\n- Greetings in 55 human languages\n- Over 15 billion miles from Earth in deep space\n\n#Shorts #Space #NASA #Voyager #Cosmos",
+        "stat_badges": ["YEAR 1977", "15 BILLION MILES"],
+        "scenes": [
+            {"search_query": "voyager spacecraft space NASA", "media_type": "photo", "motion": "zoom_in", "filter": "cinematic"},
+            {"search_query": "golden record space voyager", "media_type": "photo", "motion": "pan_right", "filter": "vibrant"},
+            {"search_query": "deep space stars galaxy nebula", "media_type": "video", "motion": "zoom_out", "filter": "cinematic"},
+            {"search_query": "sound waves glowing audio spectrum", "media_type": "video", "motion": "pan_left", "filter": "vibrant"},
+            {"search_query": "planet earth floating space", "media_type": "video", "motion": "zoom_in", "filter": "normal"}
+        ]
+    }
+]
+
+
+# ==========================================
 # 3. AI BRAINSTORMING & DIRECTOR PLANNER
 # ==========================================
 async def generate_topic_with_gemini_fallback(prompt: str) -> str:
@@ -174,37 +226,28 @@ async def discover_viral_topic():
         except Exception as e:
             print(f"⚠️ Failed to parse Gemini response JSON: {e}")
 
-    # Fallback default blueprint
-    print("⚠️ Falling back to master default topic blueprint...")
-    default_data = {
-        "title": "The Strange Phenomenon That Solved Deep Space 🌌 Fleeting Time",
-        "pillar": "Cosmic Science",
-        "topic": "Einstein Time Dilation Mystery",
-        "script": "Did you know that time doesn't run at the same speed for everyone? According to Albert Einstein's theory of relativity, gravity and high speed actually slow down time itself. Astronauts aboard the International Space Station orbit Earth at 17,500 miles per hour. Because of this extreme speed, they actually age slightly slower than everyone on Earth! After six months in space, astronauts return to Earth roughly 0.007 seconds younger than their twin siblings who stayed behind. But it gets even crazier. If you fell into a supermassive black hole, gravity would stretch time so intensely that one minute near the event horizon could equal 70 years back on Earth. Science is stranger than fiction. Subscribe for more cosmic secrets!",
-        "description": "Discover how gravity and extreme velocity warp time itself! From astronauts on the Space Station aging slower to time stopping near black holes, Einstein's theory of time dilation changes everything we know about space.\n\nKey Takeaways:\n- Astronauts age 0.007s slower in orbit\n- Extreme velocity slows down time\n- Gravity near black holes stretches time drastically\n\nSubscribe for daily mind-bending science facts!\n\n#Shorts #Science #Space #TimeDilation #DidYouKnow",
-        "stat_badges": ["17,500 MPH", "0.007 SECONDS"],
-        "scenes": [
-            {"search_query": "deep space starry night", "media_type": "video", "motion": "zoom_in", "filter": "cinematic"},
-            {"search_query": "albert einstein portrait physics", "media_type": "photo", "motion": "pan_right", "filter": "vintage"},
-            {"search_query": "planet earth space station orbit", "media_type": "video", "motion": "zoom_out", "filter": "normal"},
-            {"search_query": "astronaut floating zero gravity", "media_type": "photo", "motion": "pan_left", "filter": "vibrant"},
-            {"search_query": "vintage clock ticking fast", "media_type": "video", "motion": "zoom_in", "filter": "cinematic"},
-            {"search_query": "black hole cosmic space", "media_type": "video", "motion": "zoom_out", "filter": "vibrant"},
-            {"search_query": "glowing spacetime physics grid", "media_type": "photo", "motion": "zoom_in", "filter": "cinematic"},
-            {"search_query": "hourglass sand falling time", "media_type": "video", "motion": "pan_right", "filter": "vintage"},
-            {"search_query": "galaxy nebula space motion", "media_type": "video", "motion": "zoom_in", "filter": "cinematic"},
-            {"search_query": "glowing cosmic particles space", "media_type": "photo", "motion": "pan_left", "filter": "vibrant"}
-        ]
-    }
-    save_used_topic(default_data['title'], default_data['topic'], default_data['pillar'])
-    return default_data
+    # Pick a random unused topic from the fallback pool
+    print("⚠️ Gemini unavailable. Selecting a fresh topic from the Fallback Pool...")
+    available_pool = [t for t in FALLBACK_TOPICS_POOL if t.get("topic") not in used_topic_names]
+    
+    if not available_pool:
+        available_pool = FALLBACK_TOPICS_POOL  # Reset pool if all used
+        
+    selected_topic = random.choice(available_pool)
+    print(f"📌 Selected Fallback Topic: {selected_topic.get('title')}")
+    save_used_topic(selected_topic.get('title'), selected_topic.get('topic'), selected_topic.get('pillar'))
+    return selected_topic
 
 
 # ==========================================
-# 4. NEURAL WORD-BOUNDARY SUBTITLE ENGINE
+# 4. DETERMINISTIC 2-WORD SUBTITLE PARSER
 # ==========================================
+def time_str_to_ms(time_str):
+    h, m, s_ms = time_str.split(":")
+    s, ms = s_ms.split(",")
+    return int(h) * 3600000 + int(m) * 60000 + int(s) * 1000 + int(ms)
+
 def ms_to_time_str(ms):
-    """Converts milliseconds to HH:MM:SS,mmm SRT string."""
     h = int(ms // 3600000)
     ms %= 3600000
     m = int(ms // 60000)
@@ -213,46 +256,94 @@ def ms_to_time_str(ms):
     ms %= 1000
     return f"{h:02d}:{m:02d}:{s:02d},{int(ms):03d}"
 
+def parse_vtt_to_two_word_srt(vtt_file_path, srt_file_path="captions.srt"):
+    """Parses full VTT file and creates clean, non-overlapping 2-word caption bursts."""
+    if not os.path.exists(vtt_file_path):
+        return False
+
+    with open(vtt_file_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    time_pattern = re.compile(r'(\d{2}:\d{2}:\d{2}[\.,]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[\.,]\d{3})')
+
+    cues = []
+    current_start = None
+    current_end = None
+    current_text_lines = []
+
+    for line in lines:
+        line = line.strip()
+        match = time_pattern.search(line)
+        if match:
+            if current_start and current_end and current_text_lines:
+                text = " ".join(current_text_lines).strip()
+                if text:
+                    cues.append((current_start, current_end, text))
+                current_text_lines = []
+            current_start = match.group(1).replace(".", ",")
+            current_end = match.group(2).replace(".", ",")
+        elif line and not line.startswith("WEBVTT") and not line.isdigit():
+            current_text_lines.append(line)
+
+    if current_start and current_end and current_text_lines:
+        text = " ".join(current_text_lines).strip()
+        if text:
+            cues.append((current_start, current_end, text))
+
+    if not cues:
+        return False
+
+    with open(srt_file_path, "w", encoding="utf-8") as f:
+        idx = 1
+        for start_str, end_str, full_text in cues:
+            clean_text = re.sub(r'<[^>]+>', '', full_text).strip()
+            words = clean_text.split()
+            if not words:
+                continue
+
+            start_ms = time_str_to_ms(start_str)
+            end_ms = time_str_to_ms(end_str)
+            duration_ms = max(end_ms - start_ms, 400)
+
+            chunks = [" ".join(words[i:i+2]) for i in range(0, len(words), 2)]
+            num_chunks = len(chunks)
+            chunk_duration = duration_ms / num_chunks
+
+            for k, chk_text in enumerate(chunks):
+                c_start = start_ms + (k * chunk_duration)
+                c_end = start_ms + ((k + 1) * chunk_duration)
+
+                f.write(f"{idx}\n")
+                f.write(f"{ms_to_time_str(c_start)} --> {ms_to_time_str(c_end)}\n")
+                f.write(f"{chk_text.upper()}\n\n")
+                idx += 1
+
+    print(f"✅ Created {idx-1} exact 2-word caption bursts in {srt_file_path}")
+    return True
+
 
 async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceover.mp3", srt_path: str = "captions.srt"):
-    print("\n2️⃣ Generating Pro Voiceover & Neural Word-Boundary Subtitles...")
-    words = []  # Store list of tuples: (start_ms, end_ms, word_str)
+    print("\n2️⃣ Generating Pro Voiceover & Full-Video Subtitles...")
+    raw_vtt = "raw_captions.vtt"
     
     try:
-        import edge_tts
-        communicate = edge_tts.Communicate(text, "en-US-AndrewNeural", rate="+5%")
+        cmd = [
+            "edge-tts",
+            "--voice", "en-US-AndrewNeural",
+            "--rate=+5%",
+            "--text", text,
+            "--write-media", audio_path,
+            "--write-subtitles", raw_vtt
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
         
-        with open(audio_path, "wb") as file:
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    file.write(chunk["data"])
-                elif chunk["type"] == "WordBoundary":
-                    # Offset & duration are in 100ns units -> divide by 10,000 to get ms
-                    start_ms = chunk["offset"] / 10000
-                    duration_ms = chunk["duration"] / 10000
-                    end_ms = start_ms + duration_ms
-                    word_str = chunk["text"].strip()
-                    if word_str:
-                        words.append((start_ms, end_ms, word_str))
-
-        # Write clean non-overlapping 2-word SRT blocks
-        if words:
-            with open(srt_path, "w", encoding="utf-8") as f:
-                idx = 1
-                i = 0
-                while i < len(words):
-                    group = words[i:i+2]
-                    start_ms = group[0][0]
-                    end_ms = group[-1][1]
-                    caption_text = " ".join([w[2] for w in group]).upper()
-                    
-                    f.write(f"{idx}\n")
-                    f.write(f"{ms_to_time_str(start_ms)} --> {ms_to_time_str(end_ms)}\n")
-                    f.write(f"{caption_text}\n\n")
-                    idx += 1
-                    i += 2
-            print(f"✅ Generated {idx-1} exact 2-word subtitle bursts in {srt_path}")
+        if result.returncode == 0 and os.path.exists(raw_vtt):
+            success = parse_vtt_to_two_word_srt(raw_vtt, srt_path)
+            if not success:
+                with open(srt_path, "w", encoding="utf-8") as f:
+                    f.write("1\n00:00:00,000 --> 00:00:05,000\nAUTOMATED SHORT\n\n")
         else:
+            print(f"⚠️ CLI edge-tts notice: {result.stderr}")
             with open(srt_path, "w", encoding="utf-8") as f:
                 f.write("1\n00:00:00,000 --> 00:00:05,000\nAUTOMATED SHORT\n\n")
 
@@ -325,10 +416,8 @@ def mix_voiceover_and_bgm(voiceover_file, bgm_file, output_mixed="final_audio.mp
 # 6. STAT BADGE PILLOW GRAPHIC GENERATOR
 # ==========================================
 def create_stat_badge_png(text_string, output_png_path="badge.png"):
-    """Renders a sleek dark-glass stat graphic badge card."""
     img = Image.new("RGBA", (700, 180), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    
     draw.rounded_rectangle([(10, 10), (690, 170)], radius=25, fill=(15, 23, 42, 230), outline=(250, 204, 21, 255), width=4)
     
     try:
@@ -360,7 +449,7 @@ def create_ken_burns_clip(image_file, output_clip, motion_type="zoom_in", filter
         z_expr = "1.15"
         x_expr = f"(1-on/{total_frames})*(iw-iw/zoom)"
         y_expr = "ih/2-(ih/zoom/2)"
-    else:  # pan_right
+    else:
         z_expr = "1.15"
         x_expr = f"(on/{total_frames})*(iw-iw/zoom)"
         y_expr = "ih/2-(ih/zoom/2)"
@@ -400,7 +489,6 @@ async def download_mixed_media_broll(scenes):
             import requests
             headers = {"Authorization": pexels_api_key}
             
-            # 1. VIDEO SEARCH
             if m_type == "video":
                 try:
                     url = f"https://api.pexels.com/videos/search?query={q}&per_page=1&orientation=portrait"
@@ -426,7 +514,6 @@ async def download_mixed_media_broll(scenes):
                 except Exception as err:
                     print(f"  ⚠️ Video search error: {err}")
 
-            # 2. PHOTO SEARCH + KEN BURNS ANIMATION
             if not downloaded:
                 try:
                     photo_url = f"https://api.pexels.com/v1/search?query={q}&per_page=1&orientation=portrait"
@@ -446,7 +533,6 @@ async def download_mixed_media_broll(scenes):
                 except Exception as err:
                     print(f"  ⚠️ Photo search error: {err}")
 
-        # 3. SYNTHETIC FALLBACK
         if not downloaded:
             print(f"  🎬 [SYNTHETIC Scene {i}/{len(scenes)}] '{q}'...")
             subprocess.run([
@@ -489,10 +575,10 @@ def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None
     concat_inputs = "".join(scaled_outputs)
     filter_chains.append(f"{concat_inputs}concat=n={len(clips)}:v=1:a=0[vconcat]")
 
-    # 1. Dark Vignette overlay bar across bottom 30% for high text readability
+    # Dark Vignette overlay bar across bottom 30%
     vignette_box = "drawbox=x=0:y=ih-450:w=iw:h=450:color=black@0.4:t=fill"
     
-    # 2. Hormozi 2-word dynamic captions (Yellow text, lower third, 22px ASS size)
+    # 2-word dynamic captions
     subtitle_filter = (
         f"subtitles=filename={subtitle_file}:force_style="
         "'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H0000FFFF&,"
