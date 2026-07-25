@@ -10,6 +10,12 @@ from datetime import datetime
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
+# Force unbuffered output so logs print live in GitHub Actions
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except Exception:
+    pass
+
 try:
     import requests
     REQUESTS_AVAILABLE = True
@@ -54,7 +60,7 @@ TRANSITION_STYLES = ["fade", "dissolve", "wipeleft", "wiperight", "circleopen", 
 def cleanup_temp_files():
     """Removes leftover temporary files from previous pipeline runs."""
     print("🧹 Cleaning up leftover temporary files...")
-    patterns = ["*.mp4", "*.mp3", "*.png", "*.srt", "*.vtt", "temp_*", "raw_*"]
+    patterns = ["*.mp4", "*.mp3", "*.png", "*.srt", "*.vtt", "*.log", "temp_*", "raw_*"]
     for pattern in patterns:
         for filepath in glob.glob(pattern):
             if filepath != "final_output.mp4" and os.path.exists(filepath):
@@ -241,15 +247,9 @@ Return ONLY valid raw JSON output without markdown formatting.
     return selected_topic
 
 # ==========================================
-# 3b. LIGHTWEIGHT FACT-CHECK PASS (catch hallucinated stats before they're baked in)
+# 3b. LIGHTWEIGHT FACT-CHECK PASS
 # ==========================================
 async def fact_check_stat_badges(topic_data):
-    """
-    Runs the script's key claims (stat_badges) through Gemini with Google Search
-    grounding enabled, so a real web search backs each check instead of the model
-    just re-guessing from memory. Corrects obviously wrong figures; leaves anything
-    it can't confidently verify alone rather than guessing a "fix".
-    """
     api_key = os.environ.get("GEMINI_API_KEY")
     badges = topic_data.get("stat_badges", [])
     if not api_key or USE_NEW_SDK is not True or not badges:
@@ -306,12 +306,21 @@ raw JSON: a list of objects, one per claim, each with:
 # ==========================================
 # 4. DETERMINISTIC 2-WORD SUBTITLE PARSER
 # ==========================================
-# NOTE: Captions logic below is intentionally left 100% untouched.
 
+# FIXED: Flexible time parser that handles both HH:MM:SS,mmm and MM:SS,mmm
 def time_str_to_ms(time_str):
-    h, m, s_ms = time_str.split(":")
+    time_str = time_str.replace(".", ",")
+    parts = time_str.split(":")
+    if len(parts) == 2:
+        h = 0
+        m = int(parts[0])
+        s_ms = parts[1]
+    else:
+        h = int(parts[0])
+        m = int(parts[1])
+        s_ms = parts[2]
     s, ms = s_ms.split(",")
-    return int(h) * 3600000 + int(m) * 60000 + int(s) * 1000 + int(ms)
+    return h * 3600000 + m * 60000 + int(s) * 1000 + int(ms)
 
 def ms_to_time_str(ms):
     h = int(ms // 3600000)
@@ -330,7 +339,8 @@ def parse_vtt_to_two_word_srt(vtt_file_path, srt_file_path="captions.srt"):
     with open(vtt_file_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
-    time_pattern = re.compile(r'(\d{2}:\d{2}:\d{2}[\.,]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[\.,]\d{3})')
+    # FIXED: Pattern matches HH:MM:SS.mmm and MM:SS.mmm
+    time_pattern = re.compile(r'((?:\d{2}:)?\d{2}:\d{2}[\.,]\d{3})\s*-->\s*((?:\d{2}:)?\d{2}:\d{2}[\.,]\d{3})')
     cues = []
     current_start = None
     current_end = None
@@ -398,7 +408,8 @@ async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceove
             "--write-media", audio_path,
             "--write-subtitles", raw_vtt
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        # FIXED: Added 30s execution timeout
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
         if result.returncode == 0 and os.path.exists(raw_vtt):
             success = parse_vtt_to_two_word_srt(raw_vtt, srt_path)
@@ -423,7 +434,6 @@ async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceove
     return audio_path, srt_path
 
 def get_media_duration(path: str, fallback: float = 40.0) -> float:
-    """Probes actual duration of an audio/video file with ffprobe."""
     try:
         cmd = [
             "ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -438,7 +448,6 @@ def get_media_duration(path: str, fallback: float = 40.0) -> float:
     return fallback
 
 def pad_audio_to_minimum(input_audio: str, min_seconds: float, output_audio: str = "voiceover_padded.mp3") -> str:
-    """If the narrator finished early, add a soft silent tail so the short still hits our minimum length."""
     current = get_media_duration(input_audio, fallback=min_seconds)
     if current >= min_seconds:
         return input_audio
@@ -525,7 +534,6 @@ def create_stat_badge_png(text_string, output_png_path="badge.png"):
 def create_ken_burns_clip(image_file, output_clip, motion_type="zoom_in", filter_style="normal", duration=4, fps=30):
     total_frames = int(duration * fps)
 
-    # Combined zoom + gentle pan/rotation for a more "editor cut this by hand" feel
     if motion_type == "zoom_in":
         z_expr = "min(zoom+0.0018,1.24)"
         x_expr = "iw/2-(iw/zoom/2)+2*sin(on/25)"
@@ -566,12 +574,11 @@ def create_ken_burns_clip(image_file, output_clip, motion_type="zoom_in", filter
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 # ==========================================
-# 7b. ARCHIVAL / PRIMARY-SOURCE MEDIA (real photos & documents, not stock)
+# 7b. ARCHIVAL / PRIMARY-SOURCE MEDIA
 # ==========================================
 ARCHIVAL_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp")
 
 def search_wikimedia_commons(query, limit=3):
-    """Free/public-domain historical photos, scans, maps, diagrams. No API key required."""
     if not REQUESTS_AVAILABLE:
         return []
     try:
@@ -580,7 +587,7 @@ def search_wikimedia_commons(query, limit=3):
             "action": "query",
             "generator": "search",
             "gsrsearch": query,
-            "gsrnamespace": 6,  # File: namespace
+            "gsrnamespace": 6,
             "gsrlimit": limit,
             "prop": "imageinfo",
             "iiprop": "url|extmetadata|mime",
@@ -614,7 +621,6 @@ def search_wikimedia_commons(query, limit=3):
         return []
 
 def search_nasa_images(query, limit=3):
-    """NASA's official image/video library. Content is generally public domain (space pillar)."""
     if not REQUESTS_AVAILABLE:
         return []
     try:
@@ -644,7 +650,6 @@ def search_nasa_images(query, limit=3):
         return []
 
 def search_loc_gov(query, limit=3):
-    """Library of Congress digital collections: historical documents, letters, photos, maps."""
     if not REQUESTS_AVAILABLE:
         return []
     try:
@@ -658,7 +663,7 @@ def search_loc_gov(query, limit=3):
         for item in items:
             image_url = item.get("image_url")
             if isinstance(image_url, list) and image_url:
-                img_url = image_url[-1]  # last entry is usually highest resolution
+                img_url = image_url[-1]
             elif isinstance(image_url, str):
                 img_url = image_url
             else:
@@ -670,8 +675,6 @@ def search_loc_gov(query, limit=3):
             results.append({
                 "url": img_url,
                 "source": "loc_gov",
-                # LOC rights vary by item and aren't always fully clear/public domain, so we
-                # flag this explicitly rather than assuming - keep the audit trail honest.
                 "license": "loc_rights_may_vary",
                 "title": item.get("title", query),
             })
@@ -681,11 +684,6 @@ def search_loc_gov(query, limit=3):
         return []
 
 def search_archival_media(entity_query, pillar=""):
-    """
-    Tries real primary-source archives before ever falling back to generic stock.
-    Order depends on the content pillar so space topics hit NASA first, etc.
-    Returns the first usable hit or None.
-    """
     if not entity_query or not entity_query.strip():
         return None
 
@@ -708,7 +706,6 @@ def search_archival_media(entity_query, pillar=""):
     return None
 
 def _best_pexels_video_link(video_files):
-    """Prefer HD/highest resolution vertical-friendly file."""
     if not video_files:
         return None
     ranked = sorted(video_files, key=lambda vf: vf.get("height", 0) * vf.get("width", 0), reverse=True)
@@ -716,14 +713,6 @@ def _best_pexels_video_link(video_files):
     return (hd[0]["link"] if hd else ranked[0]["link"])
 
 async def download_mixed_media_broll(scenes, clip_duration=4.0, pillar=""):
-    """
-    Media priority per scene, weakest to strongest match:
-      1. Archival primary sources (Wikimedia Commons / NASA / Library of Congress) -
-         the real photo, document, or place, if the scene has a named entity_query.
-      2. Pexels stock video/photo - cinematic mood filler for transition shots.
-      3. Synthetic placeholder card - last resort so the pipeline never crashes.
-    Every scene gets tagged with resolved_source / resolved_license for an audit trail.
-    """
     print("\n3️⃣ Assembling Mixed-Media Scenes (Archival Sources + HD Stock + Ken Burns Motion)...")
     clips = []
     pexels_api_key = os.environ.get("PEXELS_API_KEY")
@@ -737,7 +726,6 @@ async def download_mixed_media_broll(scenes, clip_duration=4.0, pillar=""):
         clip_name = f"clip_{i}.mp4"
         downloaded = False
 
-        # --- 1. Try a real archival photo/document first ---
         archival_hit = search_archival_media(entity_query, pillar=pillar) if REQUESTS_AVAILABLE else None
         if archival_hit:
             try:
@@ -860,7 +848,6 @@ def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None
         )
         scaled_outputs.append(f"v{i}")
 
-    # Chain scenes together with alternating xfade transition styles instead of a hard cut concat.
     if len(scaled_outputs) == 1:
         final_video_label = f"[{scaled_outputs[0]}]"
     else:
@@ -877,10 +864,8 @@ def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None
             running_offset += clip_duration - transition_duration
         final_video_label = f"[{current_label}]"
 
-    # Dark vignette overlay bar across bottom (kept as in original)
     vignette_box = "drawbox=x=0:y=ih-450:w=iw:h=450:color=black@0.4:t=fill"
 
-    # 2-word dynamic captions -- UNCHANGED from the original styling/logic.
     subtitle_filter = (
         f"subtitles=filename={subtitle_file}:force_style="
         "'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H0000FFFF&,"
@@ -904,10 +889,17 @@ def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None
     ])
 
     print("⚡ Compiling pro-level video with crossfades, vignette, music & captions...")
-    result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+    
+    # FIXED: Redirect log output to file to eliminate OS subprocess pipe buffer deadlock (30-min freeze fix)
+    with open("ffmpeg_render.log", "w", encoding="utf-8") as log_file:
+        result = subprocess.run(ffmpeg_cmd, stdout=log_file, stderr=log_file)
+
     if result.returncode != 0:
-        print(f"❌ FFmpeg Error Output:\n{result.stderr}")
+        if os.path.exists("ffmpeg_render.log"):
+            with open("ffmpeg_render.log", "r", encoding="utf-8") as f:
+                print(f"❌ FFmpeg Error Output:\n{f.read()[-2000:]}")
         raise RuntimeError("Final video assembly failed.")
+        
     print(f"🎉 Master video compiled successfully: {output_filename}")
 
 # ==========================================
@@ -996,10 +988,9 @@ async def run_master_pipeline():
     raw_bgm = generate_ambient_bgm(duration=audio_duration + 1)
     mixed_audio = mix_voiceover_and_bgm(faded_vo, raw_bgm)
 
-    # Step 4: Mixed Media Assembly (HD Videos + Ken Burns Photos), sized to match narration length
+    # Step 4: Mixed Media Assembly
     scenes = topic_data.get("scenes", [])
     num_scenes = max(len(scenes), 1)
-    # Each clip must be slightly longer than its "visible" slice to feed the crossfade overlap.
     clip_duration = (audio_duration + (num_scenes - 1) * TRANSITION_DURATION) / num_scenes
     clip_duration = max(clip_duration, 2.5)
     print(f"🎞️ Using {num_scenes} scenes at ~{clip_duration:.1f}s each with {TRANSITION_DURATION}s crossfades")
@@ -1007,7 +998,6 @@ async def run_master_pipeline():
     pillar = topic_data.get("pillar", "")
     clips = await download_mixed_media_broll(scenes, clip_duration=clip_duration, pillar=pillar)
 
-    # Save a source/license audit trail for every scene actually used in this video.
     try:
         with open("media_sources.json", "w", encoding="utf-8") as f:
             json.dump({
