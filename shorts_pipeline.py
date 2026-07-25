@@ -4,6 +4,7 @@ import json
 import glob
 import asyncio
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 # --- Gemini SDK Setup ---
@@ -39,7 +40,7 @@ except ImportError:
 # ==========================================
 def cleanup_temp_files():
     """Removes leftover temporary files from previous pipeline runs."""
-    print("🧹 Cleaning up leftover files from any previous run...")
+    print("🧹 Cleaning up leftover temporary files...")
     patterns = ["*.mp4", "*.mp3", "*.png", "*.srt", "temp_*"]
     for pattern in patterns:
         for filepath in glob.glob(pattern):
@@ -51,7 +52,39 @@ def cleanup_temp_files():
 
 
 # ==========================================
-# 2. AUTO-DISCOVER TOPIC (WITH MODEL FALLBACK)
+# 2. TOPIC DEDUPLICATION HISTORY
+# ==========================================
+TOPIC_HISTORY_FILE = "used_topics.json"
+
+def load_used_topics():
+    """Loads previously generated topics to prevent duplicates."""
+    if os.path.exists(TOPIC_HISTORY_FILE):
+        try:
+            with open(TOPIC_HISTORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"⚠️ Failed to read {TOPIC_HISTORY_FILE}: {e}")
+    return []
+
+def save_used_topic(topic_title, topic_name, pillar):
+    """Appends newly generated topic to history file."""
+    history = load_used_topics()
+    history.append({
+        "topic": topic_name,
+        "title": topic_title,
+        "pillar": pillar,
+        "date": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    })
+    try:
+        with open(TOPIC_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2, ensure_ascii=False)
+        print(f"💾 Updated topic history saved to {TOPIC_HISTORY_FILE}")
+    except Exception as e:
+        print(f"⚠️ Failed to save {TOPIC_HISTORY_FILE}: {e}")
+
+
+# ==========================================
+# 3. AUTO-DISCOVER TOPIC (WITH AI DEDUPLICATION)
 # ==========================================
 async def generate_topic_with_gemini_fallback(prompt: str) -> str:
     """Tries multiple Gemini models sequentially if rate-limited (429) or failed."""
@@ -62,7 +95,7 @@ async def generate_topic_with_gemini_fallback(prompt: str) -> str:
 
     for model_name in GEMINI_MODELS:
         print(f"🎯 Attempting generation using model: {model_name}...")
-        for attempt in range(2):  # Retry up to 2 times per model if rate-limited
+        for attempt in range(2):
             try:
                 if USE_NEW_SDK:
                     client = genai.Client(api_key=api_key)
@@ -91,24 +124,34 @@ async def generate_topic_with_gemini_fallback(prompt: str) -> str:
                     await asyncio.sleep(10)
                 else:
                     print(f"⚠️ Model {model_name} failed with error: {err_msg}")
-                    break  # Non-rate-limit error, move to next model
+                    break
 
     print("⚠️ All Gemini models failed or quota exhausted.")
     return None
 
 
 async def discover_viral_topic():
-    print("\n1️⃣ Auto-Discovering detailed viral topic & scene data...")
+    print("\n1️⃣ Auto-Discovering detailed 40-second viral topic & scene data...")
     
-    prompt = """
-    Generate a short viral YouTube Short topic concept in JSON format.
+    used_topics = load_used_topics()
+    used_topic_names = [t.get("topic") for t in used_topics if t.get("topic")]
+    
+    exclusion_clause = ""
+    if used_topic_names:
+        exclusion_clause = f"\nCRITICAL: DO NOT generate any topic that is similar to these previously used topics:\n- " + "\n- ".join(used_topic_names[-20:])
+    
+    prompt = f"""
+    Generate a high-retention viral YouTube Short topic concept in JSON format.
+    {exclusion_clause}
+
     Include keys:
-    - title: Catchy short title with emojis
-    - pillar: Content pillar
-    - topic: Detailed topic name
-    - script: Short text script (around 100 words)
-    - broll_queries: List of 7 search queries for stock video clips
-    Return ONLY valid raw JSON output without extra markdown text.
+    - title: Catchy short title with emojis (under 80 characters)
+    - pillar: Content pillar (e.g. Science, Unsolved Mysteries, History, Space)
+    - topic: Specific detailed topic name
+    - script: Rich, detailed storytelling script between 180 and 220 words (targeting around 40 seconds when spoken). Include a powerful hook, fascinating details, and a quick call-to-action.
+    - broll_queries: List of 10 search queries for stock footage matching each section of the script.
+    
+    Return ONLY valid raw JSON output without markdown formatting.
     """
     
     response_text = await generate_topic_with_gemini_fallback(prompt)
@@ -120,54 +163,75 @@ async def discover_viral_topic():
             print(f"📌 Title: {data.get('title')}")
             print(f"🏷️  Pillar: {data.get('pillar')}")
             print(f"🧩 Topic: {data.get('topic')}")
+            
+            # Save topic to avoid repeats in future runs
+            save_used_topic(data.get('title'), data.get('topic'), data.get('pillar'))
             return data
         except Exception as e:
             print(f"⚠️ Failed to parse Gemini response JSON: {e}")
 
-    # Fallback default if all AI models fail
-    print("⚠️ Falling back to a safe on-niche default topic...")
-    return {
-        "title": "The Moldy Mistake That Saved a Billion Lives 🦠💊",
-        "pillar": "Accidental Discoveries",
-        "topic": "The Accidental Discovery of Penicillin",
-        "script": "In 1928, Alexander Fleming left a petri dish uncovered before leaving for vacation. When he returned, mold had killed his bacteria! That accident created penicillin, saving millions of lives.",
+    # Fallback default if AI fails
+    print("⚠️ Falling back to a safe detailed default topic...")
+    default_data = {
+        "title": "The Strange Phenomenon That Solved Deep Space 🌌 Fleeting Time",
+        "pillar": "Cosmic Science",
+        "topic": "Einstein Time Dilation Mystery",
+        "script": "Did you know that time doesn't run at the same speed for everyone? According to Albert Einstein's theory of relativity, gravity and high speed actually slow down time itself. Astronauts aboard the International Space Station orbit Earth at 17,500 miles per hour. Because of this extreme speed, they actually age slightly slower than everyone on Earth! After six months in space, astronauts return to Earth roughly 0.007 seconds younger than their twin siblings who stayed behind. But it gets even crazier. If you fell into a supermassive black hole, gravity would stretch time so intensely that one minute near the event horizon could equal 70 years back on Earth. Science is stranger than fiction. Subscribe for more cosmic secrets!",
         "broll_queries": [
-            "vintage laboratory equipment 1920s",
-            "old scientist notebook writing desk",
-            "petri dish mold macro closeup",
-            "microscope bacteria culture lab",
-            "vintage medicine bottles pharmacy",
-            "hospital ward historical black and white",
-            "modern hospital medicine hopeful"
+            "deep space stars galaxy",
+            "albert einstein historical physics",
+            "international space station orbit earth",
+            "astronaut floating zero gravity",
+            "clock ticking fast motion",
+            "black hole cosmic singularity",
+            "gravity warping spacetime",
+            "twin paradox time dilation",
+            "galaxy nebula macro cinematic"
         ]
     }
+    save_used_topic(default_data['title'], default_data['topic'], default_data['pillar'])
+    return default_data
 
 
 # ==========================================
-# 3. VOICEOVER GENERATION
+# 4. VOICEOVER & WORD-SYNCED CAPTIONS
 # ==========================================
-async def generate_voiceover(text: str, output_path: str = "voiceover.mp3"):
-    print("\n2️⃣ Generating High-Quality Voiceover...")
+async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceover.mp3", srt_path: str = "captions.srt"):
+    print("\n2️⃣ Generating High-Quality Voiceover & Word-Synced Captions...")
     try:
         import edge_tts
         communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural")
-        await communicate.save(output_path)
-        print(f"✅ Voiceover saved to {output_path}")
+        submaker = edge_tts.SubMaker()
+        
+        with open(audio_path, "wb") as file:
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    file.write(chunk["data"])
+                elif chunk["type"] == "WordBoundary":
+                    submaker.feed(chunk)
+                    
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write(submaker.get_srt())
+            
+        print(f"✅ Voiceover saved to {audio_path}")
+        print(f"✅ Subtitles generated and saved to {srt_path}")
     except Exception as e:
-        print(f"⚠️ edge-tts failed or missing ({e}), generating silence/placeholder audio...")
+        print(f"⚠️ edge-tts failed or missing ({e}), generating silence & empty subtitles...")
         subprocess.run([
             "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
-            "-t", "10", output_path
+            "-t", "40", audio_path
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write("1\n00:00:00,000 --> 00:00:05,000\nAutomated Video\n")
 
-    return output_path
+    return audio_path, srt_path
 
 
 def apply_audio_fades(input_audio: str, output_audio: str = "voiceover_faded.mp3", fade_duration: float = 0.5):
-    print("\n2b️⃣ Applying audio fades (fade-in/fade-out)...")
+    print("\n2b️⃣ Applying audio fades...")
     cmd = [
         "ffmpeg", "-y", "-i", input_audio,
-        "-af", f"afade=t=in:ss=0:d={fade_duration},afade=t=out:st=30:d={fade_duration}",
+        "-af", f"afade=t=in:ss=0:d={fade_duration},afade=t=out:st=38:d={fade_duration}",
         output_audio
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -176,10 +240,10 @@ def apply_audio_fades(input_audio: str, output_audio: str = "voiceover_faded.mp3
 
 
 # ==========================================
-# 4. DOWNLOAD B-ROLL CLIPS (PEXELS API)
+# 5. DOWNLOAD HIGH-RETENTION B-ROLL CLIPS
 # ==========================================
 async def download_broll_clips(queries):
-    print("\n3️⃣ Downloading Multi-Scene B-Roll Clips...")
+    print("\n3️⃣ Downloading Multi-Scene B-Roll Clips (3-4s Fast Cuts)...")
     clips = []
     pexels_api_key = os.environ.get("PEXELS_API_KEY")
 
@@ -209,33 +273,38 @@ async def download_broll_clips(queries):
                         if best_file:
                             v_res = requests.get(best_file, timeout=20)
                             if v_res.status_code == 200:
-                                with open(clip_name, "wb") as f:
+                                with open(f"raw_{clip_name}", "wb") as f:
                                     f.write(v_res.content)
+                                # Trim to 4 seconds for fast retention cuts
+                                subprocess.run([
+                                    "ffmpeg", "-y", "-i", f"raw_{clip_name}",
+                                    "-t", "4", "-c", "copy", clip_name
+                                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                                 downloaded = True
-                                print(f"  🎬 Downloaded Pexels B-Roll Scene {i}/{len(queries)} for: '{q}'")
+                                print(f"  🎬 Downloaded Pexels Scene {i}/{len(queries)} for: '{q}'")
             except Exception as err:
                 print(f"  ⚠️ Pexels download failed for '{q}': {err}")
 
         if not downloaded:
-            print(f"  🎬 Generating fallback synthetic scene {i}/{len(queries)} for query: '{q}'...")
+            print(f"  🎬 Generating fallback synthetic scene {i}/{len(queries)} for: '{q}'...")
             subprocess.run([
                 "ffmpeg", "-y", "-f", "lavfi",
-                "-i", f"color=c=blue:s=1080x1920:d=5:r=30",
-                "-vf", f"drawtext=text='Scene {i} - {q[:15]}':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=(h-text_h)/2",
+                "-i", f"color=c=navy:s=1080x1920:d=4:r=30",
+                "-vf", f"drawtext=text='Scene {i} - {q[:15]}':fontcolor=yellow:fontsize=45:x=(w-text_w)/2:y=(h-text_h)/2",
                 "-c:v", "libx264", "-pix_fmt", "yuv420p", clip_name
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         clips.append(clip_name)
 
-    print(f"   ✅ {len(clips)} B-roll clips ready.")
+    print(f"   ✅ {len(clips)} fast-cut B-roll clips ready.")
     return clips
 
 
 # ==========================================
-# 5. VIDEO ASSEMBLY & FFMPEG RENDERING
+# 6. ADVANCED VIDEO RENDERING WITH CAPTIONS
 # ==========================================
-def render_professional_short(clips, audio_file, output_filename="final_output.mp4"):
-    print("\n4️⃣ Rendering Video with Crossfades & Captions...")
+def render_professional_short(clips, audio_file, subtitle_file, output_filename="final_output.mp4"):
+    print("\n4️⃣ Rendering Advanced Video with Burnt-In Captions...")
     
     if not clips:
         raise ValueError("No video clips available for rendering.")
@@ -249,26 +318,34 @@ def render_professional_short(clips, audio_file, output_filename="final_output.m
     filter_chains = []
     scaled_outputs = []
 
+    # Scale, crop, and apply color enhancement to each B-roll clip
     for i in range(len(clips)):
         filter_chains.append(
-            f"[{i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[v{i}]"
+            f"[{i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,eq=contrast=1.1:saturation=1.2[v{i}]"
         )
         scaled_outputs.append(f"[v{i}]")
 
+    # Concatenate clips
     concat_inputs = "".join(scaled_outputs)
     filter_chains.append(f"{concat_inputs}concat=n={len(clips)}:v=1:a=0[vconcat]")
 
+    # Burn-in stylish subtitles (Bold Yellow/White text centered near bottom)
+    subtitle_filter = (
+        f"subtitles={subtitle_file}:force_style="
+        "'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H0000FFFF&,"
+        "OutlineColour=&H00000000&,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=180'"
+    )
+    filter_chains.append(f"[vconcat]{subtitle_filter}[vfinal]")
+
     filter_complex_str = ";".join(filter_chains)
+    ffmpeg_cmd.extend(["-filter_complex", filter_complex_str])
+    ffmpeg_cmd.extend(["-map", "[vfinal]"])
 
-    if filter_complex_str and filter_complex_str.strip():
-        ffmpeg_cmd.extend(["-filter_complex", filter_complex_str])
-        ffmpeg_cmd.extend(["-map", "[vconcat]"])
-    else:
-        ffmpeg_cmd.extend(["-map", "0:v"])
-
+    # Map audio track (last input)
     audio_stream_index = len(clips)
     ffmpeg_cmd.extend(["-map", f"{audio_stream_index}:a"])
 
+    # High-quality encoding settings
     ffmpeg_cmd.extend([
         "-c:v", "libx264",
         "-preset", "fast",
@@ -278,7 +355,7 @@ def render_professional_short(clips, audio_file, output_filename="final_output.m
         output_filename
     ])
 
-    print("⚡ Compiling final video with audio track...")
+    print("⚡ Compiling final video with captions and audio...")
     result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
@@ -289,13 +366,13 @@ def render_professional_short(clips, audio_file, output_filename="final_output.m
 
 
 # ==========================================
-# 6. YOUTUBE UPLOAD MODULE
+# 7. YOUTUBE UPLOAD MODULE
 # ==========================================
 def upload_to_youtube(video_file, title, description, tags=None):
     print("\n5️⃣ Uploading Short to YouTube...")
     
     if not YOUTUBE_SDK_AVAILABLE:
-        print("⚠️ google-api-python-client or google-auth missing. Skipping YouTube upload.")
+        print("⚠️ YouTube SDK missing. Skipping upload.")
         return False
 
     client_id = os.environ.get("YOUTUBE_CLIENT_ID")
@@ -303,7 +380,7 @@ def upload_to_youtube(video_file, title, description, tags=None):
     refresh_token = os.environ.get("YOUTUBE_REFRESH_TOKEN")
     
     if not all([client_id, client_secret, refresh_token]):
-        print("⚠️ YouTube API credentials not set in environment. Skipping YouTube upload.")
+        print("⚠️ YouTube API credentials not set. Skipping upload.")
         return False
 
     try:
@@ -320,13 +397,13 @@ def upload_to_youtube(video_file, title, description, tags=None):
         
         body = {
             "snippet": {
-                "title": title[:100],  # Title limit is 100 characters
+                "title": title[:100],
                 "description": description,
-                "tags": tags or ["shorts", "viral", "facts"],
-                "categoryId": "27"  # Category 27 = Education / Science
+                "tags": tags or ["shorts", "viral", "science", "facts"],
+                "categoryId": "27"
             },
             "status": {
-                "privacyStatus": "public",  # Options: 'public', 'unlisted', 'private'
+                "privacyStatus": "public",
                 "selfDeclaredMadeForKids": False
             }
         }
@@ -356,25 +433,25 @@ async def run_master_pipeline():
     
     cleanup_temp_files()
     
-    # Step 1: Topic Discovery (with Gemini Fallback)
+    # Step 1: Topic Discovery (Deduplicated against channel history)
     topic_data = await discover_viral_topic()
     
-    # Step 2: Voiceover & Audio
+    # Step 2: Voiceover & Subtitles
     script_text = topic_data.get("script", "")
-    raw_vo = await generate_voiceover(script_text)
+    raw_vo, srt_captions = await generate_voiceover_and_captions(script_text)
     faded_vo = apply_audio_fades(raw_vo)
     
-    # Step 3: Download B-Roll Clips (Pexels / Synthetic)
+    # Step 3: B-Roll Clips (3-4s fast cuts)
     broll_queries = topic_data.get("broll_queries", ["nature wallpaper"])
     clips = await download_broll_clips(broll_queries)
     
-    # Step 4: Render Final Video
+    # Step 4: Render Final Video with Burnt-in Captions
     output_video = "final_output.mp4"
-    render_professional_short(clips, faded_vo, output_filename=output_video)
+    render_professional_short(clips, faded_vo, srt_captions, output_filename=output_video)
     
     # Step 5: Upload to YouTube
     video_title = topic_data.get("title", "Automated YouTube Short")
-    video_desc = f"{script_text}\n\n#shorts #viral #facts"
+    video_desc = f"{script_text}\n\n#shorts #viral #facts #science"
     upload_to_youtube(output_video, title=video_title, description=video_desc)
     
     print("\n🚀 Pipeline finished successfully!")
