@@ -1,0 +1,56 @@
+name: Generate & Upload YouTube Short (2x/day)
+
+on:
+  schedule:
+    # Runs at 03:00 UTC and 15:00 UTC every day (~12 hours apart).
+    # Adjust these hours to match when you want uploads to land in your
+    # audience's timezone. GitHub cron times are UTC and, especially during
+    # high platform load, can fire a few minutes late — that's normal.
+    - cron: '0 3 * * *'
+    - cron: '0 15 * * *'
+  workflow_dispatch: {}  # lets you trigger a run manually from the Actions tab
+
+jobs:
+  generate-short:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies (ffmpeg + fonts for captions)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the Shorts generation pipeline
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: python shorts_pipeline.py
+
+      # Always keep a copy of the rendered video + voiceover as a workflow
+      # artifact, even if the YouTube upload step fails for some reason —
+      # so you never lose a render due to an upload hiccup.
+      - name: Upload video as workflow artifact (backup)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: short-video-${{ github.run_id }}
+          path: |
+            final_short_*.mp4
+            voiceover.mp3
+          retention-days: 14
+          if-no-files-found: ignore
