@@ -33,6 +33,8 @@ import sys
 import json
 import glob
 import time
+import random
+import datetime
 import asyncio
 import subprocess
 import requests
@@ -75,52 +77,243 @@ MIN_REQUIRED_CLIPS = 4  # abort if fewer than this many B-roll clips download su
 
 
 # ==========================================
-# 2. 40-SECOND DETAILED SCRIPT & SCENE DISCOVERY
+# 2. NICHE CONFIGURATION — "ORIGIN POINT"
 # ==========================================
-def discover_detailed_40s_content():
-    prompt = """
-    Generate a deeply engaging, highly detailed, 40-second viral YouTube Short script (115-130 words) focusing on a mind-bending space, deep earth, or advanced physics mystery.
-    It must have exactly 7 distinct sequential scenes so the B-roll changes every 5 to 6 seconds to keep retention hyper-high.
+# Change CHANNEL_NAME to whatever you actually name the channel.
+CHANNEL_NAME = "Origin Point"
+
+# Rotating content pillars. Each run picks ONE pillar deterministically based
+# on the date + which of the day's 2 runs it is, so:
+#   - the 2 daily uploads never share the same angle
+#   - the full set cycles every 4 days, keeping the channel varied
+#   - re-running manually the same day/hour reuses the same pillar on purpose
+#     (consistent behavior, not random drift)
+CONTENT_PILLARS = [
+    {
+        "name": "Accidental Discoveries",
+        "hint": "a major scientific or technological discovery that happened by accident or mistake",
+        "examples": "penicillin, microwave ovens, Velcro, X-rays, vulcanized rubber, Post-it notes, Teflon"
+    },
+    {
+        "name": "The Uncredited Scientist",
+        "hint": "a scientist or inventor whose critical contribution was overlooked, stolen, or under-credited at the time",
+        "examples": "Rosalind Franklin and DNA, Lise Meitner and nuclear fission, Nikola Tesla, Katherine Johnson"
+    },
+    {
+        "name": "Ancient Tech Too Advanced For Its Time",
+        "hint": "an ancient invention or engineering feat that seems impossibly advanced for when it was built",
+        "examples": "the Antikythera mechanism, Roman concrete, the Baghdad battery, Damascus steel, Greek fire"
+    },
+    {
+        "name": "The Experiment That Changed Everything",
+        "hint": "a single pivotal scientific experiment whose result reshaped an entire field",
+        "examples": "the Miller-Urey experiment, the double-slit experiment, Michelson-Morley, Pavlov's dogs"
+    },
+    {
+        "name": "Mocked or Rejected First",
+        "hint": "an invention or scientific idea that was ridiculed, dismissed, or rejected by experts before it succeeded",
+        "examples": "the telephone, heavier-than-air flight, germ theory, plate tectonics, continental drift"
+    },
+    {
+        "name": "Untold Space Race Moments",
+        "hint": "a lesser-known, high-stakes moment from the history of space exploration",
+        "examples": "the human computers behind early NASA missions, Apollo 13, Soyuz 1, the first Voyager images"
+    },
+    {
+        "name": "Recent Breakthroughs People Underrate",
+        "hint": "a modern scientific breakthrough that is more recent, or more remarkable, than most people realize",
+        "examples": "CRISPR gene editing, mRNA vaccine technology, GPS's relativity correction, ARPANET's true origins"
+    },
+    {
+        "name": "What If It Had Failed",
+        "hint": "a close call or near-failure in science/history where things could easily have gone the other way",
+        "examples": "the Cuban Missile Crisis submarine incident, a vaccine trial that nearly derailed, a near-miss asteroid discovery"
+    },
+]
+
+
+def _select_todays_pillar():
+    """Deterministically pick a content pillar based on date + time-of-day,
+    so the 2x/day schedule rotates through all pillars without repeats."""
+    now = datetime.datetime.utcnow()
+    run_slot = 0 if now.hour < 12 else 1  # matches the 03:00 / 15:00 UTC cron
+    rotation_index = (now.toordinal() * 2 + run_slot) % len(CONTENT_PILLARS)
+    return CONTENT_PILLARS[rotation_index]
+
+
+# ==========================================
+# TOPIC HISTORY (prevents ever repeating the same story)
+# ==========================================
+# This file lives in the repo itself and is committed back by the GitHub
+# Actions workflow after every successful run, so the "already covered"
+# list persists across runs even though each run starts on a fresh runner.
+TOPIC_HISTORY_PATH = "used_topics.json"
+MAX_HISTORY_SENT_TO_PROMPT = 60  # keep prompt size reasonable even after months of runs
+
+
+def load_topic_history():
+    if not os.path.exists(TOPIC_HISTORY_PATH):
+        return []
+    try:
+        with open(TOPIC_HISTORY_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"⚠️ Could not read {TOPIC_HISTORY_PATH} ({e}) — starting with empty history.")
+        return []
+
+
+def save_topic_history(history):
+    try:
+        with open(TOPIC_HISTORY_PATH, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2, ensure_ascii=False)
+    except OSError as e:
+        print(f"⚠️ Could not write {TOPIC_HISTORY_PATH}: {e}")
+
+
+def _topic_already_used(topic, history):
+    """Fuzzy-ish duplicate check: case-insensitive substring match against
+    past topics, since Gemini may phrase the same story slightly differently."""
+    topic_norm = topic.strip().lower()
+    for entry in history:
+        past = entry.get("topic", "").strip().lower()
+        if not past:
+            continue
+        if topic_norm == past or topic_norm in past or past in topic_norm:
+            return True
+    return False
+
+
+# ==========================================
+# 3. 40-SECOND DETAILED SCRIPT & SCENE DISCOVERY
+# ==========================================
+def discover_detailed_40s_content(topic_history=None):
+    topic_history = topic_history or []
+    pillar = _select_todays_pillar()
+    print(f"🎯 Today's content pillar: {pillar['name']}")
+
+    # Only send the most recent N past topics to keep the prompt compact.
+    recent_topics = [entry.get("topic", "") for entry in topic_history[-MAX_HISTORY_SENT_TO_PROMPT:] if entry.get("topic")]
+    already_covered_block = (
+        "Topics ALREADY covered on this channel — do NOT repeat any of these "
+        "or close variants of them:\n- " + "\n- ".join(recent_topics)
+        if recent_topics else
+        "No topics have been covered yet — this is one of the first videos."
+    )
+
+    def build_prompt():
+        return f"""
+    You are writing a script for the YouTube Shorts channel "{CHANNEL_NAME}",
+    a channel dedicated to short, punchy stories about the surprising true
+    history behind scientific discoveries, inventions, and innovations. Every
+    video answers a variant of: "here's the real story behind something you
+    thought you knew."
+
+    Today's content pillar is: "{pillar['name']}" — specifically, {pillar['hint']}.
+    Pick ONE specific, concrete real historical example that fits this pillar
+    (for inspiration, similar past examples in this pillar include: {pillar['examples']}).
+
+    {already_covered_block}
+
+    You MUST pick a topic that is NOT in the already-covered list above.
+    This is critical — the channel's catalog must never repeat a story.
+
+    Generate a deeply engaging, highly detailed, 40-second viral YouTube Short
+    script (115-130 words) telling that one true story clearly and dramatically.
+    It must have exactly 7 distinct sequential scenes so the B-roll changes
+    every 5 to 6 seconds to keep retention hyper-high.
+
+    Requirements:
+    - Fast, curiosity-driven hook in the first 3 seconds (no throat-clearing).
+    - All facts must be real and historically accurate — no invented details.
+    - End the voiceover_text with this exact outro line, verbatim:
+      "That's the origin point. Follow {CHANNEL_NAME} for the next one."
+    - The pexels_query for each scene must describe realistic, findable stock
+      footage (avoid overly specific historical figures' faces, since stock
+      footage of them won't exist — use eras, settings, objects, and abstract
+      visuals instead, e.g. "vintage laboratory equipment 1920s" rather than
+      a named person).
 
     Return ONLY a JSON object with this exact structure:
-    {
+    {{
       "topic": "Topic Name",
+      "pillar": "{pillar['name']}",
       "title": "Catchy Title with Emojis",
-      "description": "SEO optimized description with viral hashtags #Shorts #Science",
-      "voiceover_text": "Detailed 40-second script containing 115 to 130 words. Fast hook in the first 3 seconds.",
+      "description": "SEO optimized description with viral hashtags #Shorts #Science #History",
+      "voiceover_text": "Detailed 40-second script containing 115 to 130 words, ending with the exact outro line specified above.",
       "scenes": [
-        {"timestamp": "0-6s", "pexels_query": "deep space galaxy rotation cinematic"},
-        {"timestamp": "6-12s", "pexels_query": "quantum physics glowing particle energy"},
-        {"timestamp": "12-18s", "pexels_query": "massive black hole accretion disk"},
-        {"timestamp": "18-24s", "pexels_query": "futuristic warp speed space travel"},
-        {"timestamp": "24-30s", "pexels_query": "subatomic particle collision abstract"},
-        {"timestamp": "30-36s", "pexels_query": "supernova cosmic explosion shockwave"},
-        {"timestamp": "36-40s", "pexels_query": "mysterious universe cosmos infinity"}
+        {{"timestamp": "0-6s", "pexels_query": "..."}},
+        {{"timestamp": "6-12s", "pexels_query": "..."}},
+        {{"timestamp": "12-18s", "pexels_query": "..."}},
+        {{"timestamp": "18-24s", "pexels_query": "..."}},
+        {{"timestamp": "24-30s", "pexels_query": "..."}},
+        {{"timestamp": "30-36s", "pexels_query": "..."}},
+        {{"timestamp": "36-40s", "pexels_query": "..."}}
       ]
-    }
+    }}
     """
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(response_mime_type="application/json")
-        )
-        return json.loads(response.text.strip())
-    except Exception as e:
-        print(f"⚠️ API Fallback: {e}")
-        return {
-            "title": "The Terrifying Physics of Time Dilation ⏳🌌",
-            "description": "How time slows down near the speed of light. #Science #Shorts #Physics",
-            "voiceover_text": "Did you know time actually runs slower the faster you move through space? If you boarded a rocket ship and traveled near the speed of light for just five years, when you finally returned to Earth, centuries would have passed by! Your friends, your family, and everyone you ever knew would be long gone. This isn't science fiction, it's proven physics governed by Einstein's theory of relativity. Gravity and speed warp the very fabric of spacetime itself. The universe has rules so bizarre, they completely break our everyday reality!",
-            "scenes": [
-                {"pexels_query": "futuristic space rocket launch cinematic"},
-                {"pexels_query": "clock ticking time warp space"},
-                {"pexels_query": "earth view from deep space orbit"},
-                {"pexels_query": "albert einstein physics chalkboard abstract"},
-                {"pexels_query": "spacetime gravitational wave distortion"},
-                {"pexels_query": "glowing galaxy cosmic nebula rotation"}
-            ]
-        }
+
+    max_attempts = 3
+    last_data = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=build_prompt(),
+                config=types.GenerateContentConfig(response_mime_type="application/json")
+            )
+            data = json.loads(response.text.strip())
+            data.setdefault("pillar", pillar["name"])
+            last_data = data
+
+            topic = data.get("topic", "")
+            if not topic:
+                print(f"⚠️ Attempt {attempt}: no topic field returned, retrying...")
+                continue
+
+            if _topic_already_used(topic, topic_history):
+                print(f"⚠️ Attempt {attempt}: topic '{topic}' looks like a repeat, retrying...")
+                continue
+
+            return data  # unique topic, good to go
+
+        except Exception as e:
+            print(f"⚠️ Attempt {attempt} failed: {e}")
+
+    # All attempts either failed or kept returning duplicates — fall back.
+    print("⚠️ Falling back to a safe on-niche default after repeated duplicate/failed attempts.")
+    return _fallback_content()
+
+
+def _fallback_content():
+    return {
+        "topic": "The Accidental Discovery of Penicillin",
+        "pillar": "Accidental Discoveries",
+        "title": "The Moldy Mistake That Saved a Billion Lives 🦠💊",
+        "description": (
+            "How a messy lab and a forgotten petri dish changed medicine forever. "
+            "#Shorts #Science #History #Penicillin"
+        ),
+        "voiceover_text": (
+            "In 1928, a scientist left for vacation without cleaning his lab. "
+            "When he came back, one of his petri dishes was contaminated with mold. "
+            "Most people would have thrown it away. He almost did too. "
+            "But he noticed something strange: bacteria near the mold were dying. "
+            "That mold was Penicillium, and it was killing bacteria on contact. "
+            "That single overlooked, moldy dish became penicillin, the first true "
+            "antibiotic, and it would go on to save hundreds of millions of lives. "
+            "A forgotten mistake in a messy lab became one of medicine's greatest breakthroughs. "
+            "That's the origin point. Follow Origin Point for the next one."
+        ),
+        "scenes": [
+            {"pexels_query": "vintage laboratory equipment 1920s"},
+            {"pexels_query": "old scientist notebook writing desk"},
+            {"pexels_query": "petri dish mold macro closeup"},
+            {"pexels_query": "microscope bacteria culture lab"},
+            {"pexels_query": "vintage medicine bottles pharmacy"},
+            {"pexels_query": "hospital ward historical black and white"},
+            {"pexels_query": "modern hospital medicine hopeful"}
+        ]
+    }
 
 
 # ==========================================
@@ -438,12 +631,19 @@ async def run_master_pipeline():
     print("🧹 Cleaning up leftover files from any previous run...")
     cleanup_intermediate_files()
 
-    print("\n1️⃣ Auto-Discovering detailed viral topic & scene data...")
-    data = discover_detailed_40s_content()
+    print("📚 Loading topic history to avoid repeats...")
+    topic_history = load_topic_history()
+    print(f"   {len(topic_history)} past topics on record.\n")
+
+    print("1️⃣ Auto-Discovering detailed viral topic & scene data...")
+    data = discover_detailed_40s_content(topic_history)
     title = data.get('title', 'Untitled Short')
     description = data.get('description', 'Fascinating science short #Shorts')
+    topic = data.get('topic', 'Unknown')
 
     print(f"📌 Title: {title}")
+    print(f"🏷️  Pillar: {data.get('pillar', 'Unknown')}")
+    print(f"🧩 Topic: {topic}")
     print(f"📝 Script Length: {len(data.get('voiceover_text', '').split())} words\n")
 
     vo_file = "voiceover.mp3"
@@ -464,6 +664,15 @@ async def run_master_pipeline():
 
     print("5️⃣ Attempting Automated YouTube Upload (if credentials are configured)...")
     upload_to_youtube(output_filename, title, description)
+
+    print("6️⃣ Recording this topic in history so it's never repeated...")
+    topic_history.append({
+        "topic": topic,
+        "title": title,
+        "pillar": data.get("pillar", "Unknown"),
+        "date": datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    })
+    save_topic_history(topic_history)
 
     print("\n🧹 Cleaning up intermediate files (keeping final video + voiceover)...")
     cleanup_intermediate_files()
