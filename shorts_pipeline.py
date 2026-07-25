@@ -9,9 +9,9 @@ from pathlib import Path
 
 # --- Gemini SDK Setup ---
 GEMINI_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
     "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
 ]
 
 try:
@@ -41,7 +41,7 @@ except ImportError:
 def cleanup_temp_files():
     """Removes leftover temporary files from previous pipeline runs."""
     print("🧹 Cleaning up leftover temporary files...")
-    patterns = ["*.mp4", "*.mp3", "*.png", "*.srt", "temp_*"]
+    patterns = ["*.mp4", "*.mp3", "*.png", "*.srt", "temp_*", "raw_*"]
     for pattern in patterns:
         for filepath in glob.glob(pattern):
             if filepath != "final_output.mp4" and os.path.exists(filepath):
@@ -120,8 +120,8 @@ async def generate_topic_with_gemini_fallback(prompt: str) -> str:
             except Exception as err:
                 err_msg = str(err)
                 if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-                    print(f"⚠️ Model {model_name} hit rate limit (429). Waiting 10 seconds before retrying...")
-                    await asyncio.sleep(10)
+                    print(f"⚠️ Model {model_name} hit rate limit (429). Waiting 15 seconds before retrying...")
+                    await asyncio.sleep(15)
                 else:
                     print(f"⚠️ Model {model_name} failed with error: {err_msg}")
                     break
@@ -164,7 +164,6 @@ async def discover_viral_topic():
             print(f"🏷️  Pillar: {data.get('pillar')}")
             print(f"🧩 Topic: {data.get('topic')}")
             
-            # Save topic to avoid repeats in future runs
             save_used_topic(data.get('title'), data.get('topic'), data.get('pillar'))
             return data
         except Exception as e:
@@ -196,25 +195,61 @@ async def discover_viral_topic():
 # ==========================================
 # 4. VOICEOVER & WORD-SYNCED CAPTIONS
 # ==========================================
+def format_srt_time(ms):
+    """Formats milliseconds to HH:MM:SS,mmm SRT format."""
+    seconds = int(ms // 1000)
+    milliseconds = int(ms % 1000)
+    minutes = seconds // 60
+    hours = minutes // 60
+    seconds = seconds % 60
+    minutes = minutes % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
+
+
+def write_srt_subtitles(word_boundaries, srt_file_path):
+    """Converts edge-tts word boundary events into a perfectly valid SRT file."""
+    words_per_caption = 4  # 3-4 words per caption box for high retention
+    current_chunk = []
+    caption_index = 1
+    
+    with open(srt_file_path, "w", encoding="utf-8") as f:
+        for i, wb in enumerate(word_boundaries):
+            current_chunk.append(wb)
+            if len(current_chunk) >= words_per_caption or i == len(word_boundaries) - 1:
+                start_time = current_chunk[0]["offset"] / 10000  # 100ns units to ms
+                end_time = (current_chunk[-1]["offset"] + current_chunk[-1]["duration"]) / 10000
+                text = " ".join([w["text"] for w in current_chunk]).strip()
+                
+                if text:
+                    f.write(f"{caption_index}\n")
+                    f.write(f"{format_srt_time(start_time)} --> {format_srt_time(end_time)}\n")
+                    f.write(f"{text}\n\n")
+                    caption_index += 1
+                current_chunk = []
+
+
 async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceover.mp3", srt_path: str = "captions.srt"):
     print("\n2️⃣ Generating High-Quality Voiceover & Word-Synced Captions...")
+    word_boundaries = []
     try:
         import edge_tts
         communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural")
-        submaker = edge_tts.SubMaker()
         
         with open(audio_path, "wb") as file:
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     file.write(chunk["data"])
                 elif chunk["type"] == "WordBoundary":
-                    submaker.feed(chunk)
+                    word_boundaries.append(chunk)
                     
-        with open(srt_path, "w", encoding="utf-8") as f:
-            f.write(submaker.get_srt())
-            
+        if word_boundaries:
+            write_srt_subtitles(word_boundaries, srt_path)
+            print(f"✅ Subtitles generated and saved to {srt_path}")
+        else:
+            with open(srt_path, "w", encoding="utf-8") as f:
+                f.write("1\n00:00:00,000 --> 00:00:05,000\nAutomated Short\n\n")
+
         print(f"✅ Voiceover saved to {audio_path}")
-        print(f"✅ Subtitles generated and saved to {srt_path}")
     except Exception as e:
         print(f"⚠️ edge-tts failed or missing ({e}), generating silence & empty subtitles...")
         subprocess.run([
@@ -222,7 +257,7 @@ async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceove
             "-t", "40", audio_path
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         with open(srt_path, "w", encoding="utf-8") as f:
-            f.write("1\n00:00:00,000 --> 00:00:05,000\nAutomated Video\n")
+            f.write("1\n00:00:00,000 --> 00:00:05,000\nAutomated Short\n\n")
 
     return audio_path, srt_path
 
@@ -273,11 +308,12 @@ async def download_broll_clips(queries):
                         if best_file:
                             v_res = requests.get(best_file, timeout=20)
                             if v_res.status_code == 200:
-                                with open(f"raw_{clip_name}", "wb") as f:
+                                raw_file = f"raw_{clip_name}"
+                                with open(raw_file, "wb") as f:
                                     f.write(v_res.content)
                                 # Trim to 4 seconds for fast retention cuts
                                 subprocess.run([
-                                    "ffmpeg", "-y", "-i", f"raw_{clip_name}",
+                                    "ffmpeg", "-y", "-i", raw_file,
                                     "-t", "4", "-c", "copy", clip_name
                                 ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                                 downloaded = True
@@ -318,20 +354,18 @@ def render_professional_short(clips, audio_file, subtitle_file, output_filename=
     filter_chains = []
     scaled_outputs = []
 
-    # Scale, crop, and apply color enhancement to each B-roll clip
     for i in range(len(clips)):
         filter_chains.append(
             f"[{i}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,eq=contrast=1.1:saturation=1.2[v{i}]"
         )
         scaled_outputs.append(f"[v{i}]")
 
-    # Concatenate clips
     concat_inputs = "".join(scaled_outputs)
     filter_chains.append(f"{concat_inputs}concat=n={len(clips)}:v=1:a=0[vconcat]")
 
-    # Burn-in stylish subtitles (Bold Yellow/White text centered near bottom)
+    # Burn-in subtitles (Yellow text with black border, bottom-centered)
     subtitle_filter = (
-        f"subtitles={subtitle_file}:force_style="
+        f"subtitles=filename={subtitle_file}:force_style="
         "'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H0000FFFF&,"
         "OutlineColour=&H00000000&,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=180'"
     )
@@ -341,11 +375,9 @@ def render_professional_short(clips, audio_file, subtitle_file, output_filename=
     ffmpeg_cmd.extend(["-filter_complex", filter_complex_str])
     ffmpeg_cmd.extend(["-map", "[vfinal]"])
 
-    # Map audio track (last input)
     audio_stream_index = len(clips)
     ffmpeg_cmd.extend(["-map", f"{audio_stream_index}:a"])
 
-    # High-quality encoding settings
     ffmpeg_cmd.extend([
         "-c:v", "libx264",
         "-preset", "fast",
@@ -433,7 +465,7 @@ async def run_master_pipeline():
     
     cleanup_temp_files()
     
-    # Step 1: Topic Discovery (Deduplicated against channel history)
+    # Step 1: Topic Discovery
     topic_data = await discover_viral_topic()
     
     # Step 2: Voiceover & Subtitles
@@ -441,11 +473,11 @@ async def run_master_pipeline():
     raw_vo, srt_captions = await generate_voiceover_and_captions(script_text)
     faded_vo = apply_audio_fades(raw_vo)
     
-    # Step 3: B-Roll Clips (3-4s fast cuts)
+    # Step 3: B-Roll Clips
     broll_queries = topic_data.get("broll_queries", ["nature wallpaper"])
     clips = await download_broll_clips(broll_queries)
     
-    # Step 4: Render Final Video with Burnt-in Captions
+    # Step 4: Render Final Video
     output_video = "final_output.mp4"
     render_professional_short(clips, faded_vo, srt_captions, output_filename=output_video)
     
