@@ -201,100 +201,60 @@ async def discover_viral_topic():
 
 
 # ==========================================
-# 4. HORMOZI 1-3 WORD SUBTITLE ENGINE
+# 4. NEURAL WORD-BOUNDARY SUBTITLE ENGINE
 # ==========================================
-def parse_and_chunk_subtitles(vtt_or_srt_path, output_srt_path="captions.srt"):
-    """Parses subtitle file and chunks lines into 1-3 words max for Hormozi style."""
-    if not os.path.exists(vtt_or_srt_path):
-        return False
-        
-    with open(vtt_or_srt_path, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    lines = content.splitlines()
-    time_pattern = re.compile(r'(\d{2}:\d{2}:\d{2}[\.,]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[\.,]\d{3})')
-    
-    entries = []
-    current_time = None
-    current_text = []
-    
-    for line in lines:
-        line = line.strip()
-        match = time_pattern.search(line)
-        if match:
-            if current_time and current_text:
-                entries.append((current_time[0], current_time[1], " ".join(current_text)))
-                current_text = []
-            start, end = match.group(1).replace(".", ","), match.group(2).replace(".", ",")
-            current_time = (start, end)
-        elif line and not line.startswith("WEBVTT") and not line.isdigit():
-            current_text.append(line)
-            
-    if current_time and current_text:
-        entries.append((current_time[0], current_time[1], " ".join(current_text)))
-
-    # Chunk long subtitle blocks into 1 to 3 words
-    short_entries = []
-    for start, end, full_text in entries:
-        words = re.sub(r'<[^>]+>', '', full_text).strip().split()
-        if not words:
-            continue
-        
-        # Split into chunks of 2-3 words
-        chunk_size = 2 if len(words) > 4 else len(words)
-        word_chunks = [words[i:i + chunk_size] for i in range(0, len(words), chunk_size)]
-        
-        # Approximate timing per chunk
-        # Format HH:MM:SS,mmm
-        short_entries.append((start, end, " ".join(words[:3])))
-
-    with open(output_srt_path, "w", encoding="utf-8") as f:
-        idx = 1
-        for start, end, text in entries:
-            clean_text = re.sub(r'<[^>]+>', '', text).strip()
-            # Wrap in 2-3 word blocks
-            words = clean_text.split()
-            chunks = [" ".join(words[i:i+3]) for i in range(0, len(words), 3)]
-            for chk in chunks:
-                if chk:
-                    f.write(f"{idx}\n")
-                    f.write(f"{start} --> {end}\n")
-                    f.write(f"{chk.upper()}\n\n")
-                    idx += 1
-                
-    print(f"✅ Generated {idx-1} Hormozi-style short caption bursts in {output_srt_path}")
-    return True
+def ms_to_time_str(ms):
+    """Converts milliseconds to HH:MM:SS,mmm SRT string."""
+    h = int(ms // 3600000)
+    ms %= 3600000
+    m = int(ms // 60000)
+    ms %= 60000
+    s = int(ms // 1000)
+    ms %= 1000
+    return f"{h:02d}:{m:02d}:{s:02d},{int(ms):03d}"
 
 
 async def generate_voiceover_and_captions(text: str, audio_path: str = "voiceover.mp3", srt_path: str = "captions.srt"):
-    print("\n2️⃣ Generating Pro Voiceover & Hormozi Subtitles...")
-    raw_vtt = "raw_captions.vtt"
+    print("\n2️⃣ Generating Pro Voiceover & Neural Word-Boundary Subtitles...")
+    words = []  # Store list of tuples: (start_ms, end_ms, word_str)
     
     try:
-        cmd = [
-            "edge-tts",
-            "--voice", "en-US-AndrewNeural",
-            "--rate=+5%",
-            "--text", text,
-            "--write-media", audio_path,
-            "--write-subtitles", raw_vtt
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        import edge_tts
+        communicate = edge_tts.Communicate(text, "en-US-AndrewNeural", rate="+5%")
         
-        if result.returncode == 0 and os.path.exists(raw_vtt):
-            parse_and_chunk_subtitles(raw_vtt, srt_path)
-        else:
-            import edge_tts
-            communicate = edge_tts.Communicate(text, "en-US-AndrewNeural", rate="+5%")
-            submaker = edge_tts.SubMaker()
-            with open(audio_path, "wb") as file:
-                async for chunk in communicate.stream():
-                    if chunk["type"] == "audio":
-                        file.write(chunk["data"])
-                    elif chunk["type"] in ["WordBoundary", "SentenceBoundary"]:
-                        submaker.feed(chunk)
+        with open(audio_path, "wb") as file:
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    file.write(chunk["data"])
+                elif chunk["type"] == "WordBoundary":
+                    # Offset & duration are in 100ns units -> divide by 10,000 to get ms
+                    start_ms = chunk["offset"] / 10000
+                    duration_ms = chunk["duration"] / 10000
+                    end_ms = start_ms + duration_ms
+                    word_str = chunk["text"].strip()
+                    if word_str:
+                        words.append((start_ms, end_ms, word_str))
+
+        # Write clean non-overlapping 2-word SRT blocks
+        if words:
             with open(srt_path, "w", encoding="utf-8") as f:
-                f.write(submaker.get_srt())
+                idx = 1
+                i = 0
+                while i < len(words):
+                    group = words[i:i+2]
+                    start_ms = group[0][0]
+                    end_ms = group[-1][1]
+                    caption_text = " ".join([w[2] for w in group]).upper()
+                    
+                    f.write(f"{idx}\n")
+                    f.write(f"{ms_to_time_str(start_ms)} --> {ms_to_time_str(end_ms)}\n")
+                    f.write(f"{caption_text}\n\n")
+                    idx += 1
+                    i += 2
+            print(f"✅ Generated {idx-1} exact 2-word subtitle bursts in {srt_path}")
+        else:
+            with open(srt_path, "w", encoding="utf-8") as f:
+                f.write("1\n00:00:00,000 --> 00:00:05,000\nAUTOMATED SHORT\n\n")
 
         print(f"✅ Voiceover saved to {audio_path}")
     except Exception as e:
@@ -322,7 +282,7 @@ def apply_audio_fades(input_audio: str, output_audio: str = "voiceover_faded.mp3
 
 
 # ==========================================
-# 5. AUDIO ENGINE (VOICEOVER + BGM + SFX)
+# 5. AUDIO ENGINE (VOICEOVER + BGM)
 # ==========================================
 def generate_ambient_bgm(output_bgm: str = "bgm.mp3", duration: int = 45):
     print("🎵 Synthesizing background music track...")
@@ -369,7 +329,6 @@ def create_stat_badge_png(text_string, output_png_path="badge.png"):
     img = Image.new("RGBA", (700, 180), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
-    # Draw dark rounded rectangle with yellow border
     draw.rounded_rectangle([(10, 10), (690, 170)], radius=25, fill=(15, 23, 42, 230), outline=(250, 204, 21, 255), width=4)
     
     try:
@@ -530,14 +489,14 @@ def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None
     concat_inputs = "".join(scaled_outputs)
     filter_chains.append(f"{concat_inputs}concat=n={len(clips)}:v=1:a=0[vconcat]")
 
-    # 1. Dark Vignette overlay bar across bottom 30% for subtitle contrast
+    # 1. Dark Vignette overlay bar across bottom 30% for high text readability
     vignette_box = "drawbox=x=0:y=ih-450:w=iw:h=450:color=black@0.4:t=fill"
     
-    # 2. Hormozi 1-3 word subtitles (Yellow bold text with black border, lower third)
+    # 2. Hormozi 2-word dynamic captions (Yellow text, lower third, 22px ASS size)
     subtitle_filter = (
         f"subtitles=filename={subtitle_file}:force_style="
-        "'Fontname=DejaVu Sans,Fontsize=24,PrimaryColour=&H0000FFFF&,"
-        "OutlineColour=&H00000000&,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=120'"
+        "'Fontname=DejaVu Sans,Fontsize=22,PrimaryColour=&H0000FFFF&,"
+        "OutlineColour=&H00000000&,BorderStyle=1,Outline=4,Shadow=2,Alignment=2,MarginV=120'"
     )
     filter_chains.append(f"[vconcat]{vignette_box},{subtitle_filter}[vfinal]")
 
