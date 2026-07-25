@@ -2,17 +2,16 @@ name: Generate & Upload YouTube Short (2x/day)
 
 on:
   schedule:
-    # Runs at 03:00 UTC and 15:00 UTC every day (~12 hours apart).
     - cron: '0 3 * * *'
     - cron: '0 15 * * *'
-  workflow_dispatch: {}  # Lets you trigger a run manually from the Actions tab
+  workflow_dispatch: {}
 
 jobs:
   generate-short:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: write  # Needed so the workflow can commit used_topics.json back
+      contents: write
 
     steps:
       - name: Checkout repo
@@ -25,7 +24,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install system dependencies (ffmpeg + fonts for captions)
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg fonts-dejavu-core
@@ -42,7 +41,6 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: python shorts_pipeline.py
 
-      # Backup generated files as GitHub Action Artifacts
       - name: Upload video as workflow artifact (backup)
         if: always()
         uses: actions/upload-artifact@v4
@@ -57,7 +55,6 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-      # Official auto-commit action: automatically handles rebase and non-fast-forward retries
       - name: Commit & Push updated topic history
         if: always()
         uses: stefanzweifel/git-auto-commit-action@v5
