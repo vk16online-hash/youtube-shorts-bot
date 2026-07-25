@@ -49,51 +49,23 @@ jobs:
           path: |
             final_output.mp4
             voiceover.mp3
+            captions.ass
+            broll_manifest.json
+            fact_check_log.json
           retention-days: 14
           if-no-files-found: ignore
 
-      # Programmatically merge topic history to avoid any Git merge conflicts
+      # Persist topic history back to repo safely without non-fast-forward errors
       - name: Persist topic history back to repo
         if: always()
         run: |
           git config user.name "shorts-bot"
           git config user.email "shorts-bot@users.noreply.github.com"
-          
-          # Safely merge JSON history using Python
-          python -c '
-          import json, os
-          
-          local_file = "used_topics.json"
-          local_data = []
-          if os.path.exists(local_file):
-              try:
-                  with open(local_file, "r") as f:
-                      local_data = json.load(f)
-              except Exception: pass
-
-          os.system("git fetch origin main")
-          os.system("git checkout origin/main -- used_topics.json 2>/dev/null")
-          remote_data = []
-          if os.path.exists(local_file):
-              try:
-                  with open(local_file, "r") as f:
-                      remote_data = json.load(f)
-              except Exception: pass
-
-          merged = {item.get("topic"): item for item in remote_data if item.get("topic")}
-          for item in local_data:
-              if item.get("topic"):
-                  merged[item.get("topic")] = item
-
-          merged_list = list(merged.values())
-          with open(local_file, "w", encoding="utf-8") as f:
-              json.dump(merged_list, f, indent=2, ensure_ascii=False)
-          '
-
           git add used_topics.json
           if git diff --cached --quiet; then
-            echo "No new topics to push."
+            echo "No changes to used_topics.json — skipping commit."
           else
             git commit -m "Update topic history [skip ci]"
+            git pull --rebase origin main || git rebase --skip
             git push origin HEAD:main
           fi
