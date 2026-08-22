@@ -99,7 +99,7 @@ def save_used_topic(topic_title, topic_name, pillar):
         print(f"⚠️ Failed to save {TOPIC_HISTORY_FILE}: {e}")
 
 # ==========================================
-# DYNAMIC FALLBACK TOPICS POOL (VARIETY GUARANTEE)
+# DYNAMIC FALLBACK TOPICS POOL (EXPANDED VARIETY)
 # ==========================================
 FALLBACK_TOPICS_POOL = [
     {
@@ -107,7 +107,7 @@ FALLBACK_TOPICS_POOL = [
         "pillar": "Medical History",
         "topic": "The Accidental Discovery of Penicillin",
         "script": "In 1928, Alexander Fleming returned from vacation to find his petri dishes covered in mold. But instead of throwing them away, he noticed something impossible. The mold was completely killing bacteria around it! That single accident led to penicillin, one of the most important discoveries in human history. Within twenty years it was mass produced and shipped to soldiers dying from infected wounds. Today it's estimated penicillin and the antibiotics it inspired have saved over two hundred million lives. One messy lab, one lucky accident, and modern medicine was never the same. Subscribe for more crazy history facts!",
-        "description": "How a messy laboratory accident in 1928 led to the discovery of penicillin, the miracle antibiotic that transformed modern medicine!\n\nKey Takeaways:\n- Alexander Fleming discovered penicillin by accident\n- Petri dish mold killed surrounding bacteria\n- Over 200 million lives saved worldwide\n\n#Shorts #Science #History #Penicillin #DidYouKnow",
+        "description": "How a messy laboratory accident in 1928 led to the discovery of penicillin!\n\n#Shorts #Science #History #Penicillin #DidYouKnow",
         "stat_badges": ["YEAR 1928", "200 MILLION LIVES"],
         "scenes": [
             {"entity_query": "Alexander Fleming", "search_query": "old scientist laboratory desk", "media_type": "photo", "motion": "zoom_in", "filter": "vintage"},
@@ -124,7 +124,7 @@ FALLBACK_TOPICS_POOL = [
         "pillar": "Earth Science",
         "topic": "Secrets of the Mariana Trench",
         "script": "Did you know that the deepest point on Earth could swallow Mount Everest whole with miles to spare? The Mariana Trench plunges nearly 36,000 feet into complete darkness. The water pressure at the bottom is over 1,000 times greater than at the surface, enough to crush a submarine like a soda can. Sunlight has never touched the trench floor, yet strange glowing sea creatures thrive down there, surviving in freezing near total darkness. Only a handful of humans have ever gone down and come back. What else is hiding at the bottom of our own planet? Subscribe for more deep ocean mysteries!",
-        "description": "Explore the terrifying depths of the Mariana Trench, Earth's deepest underwater abyss, reaching nearly 36,000 feet deep!\n\nKey Takeaways:\n- 36,000 feet deep in complete darkness\n- Water pressure 1,000x greater than surface level\n- Glowing creatures thrive in extreme depths\n\n#Shorts #Ocean #DeepSea #EarthFacts #DidYouKnow",
+        "description": "Explore the terrifying depths of the Mariana Trench, Earth's deepest underwater abyss!\n\n#Shorts #Ocean #DeepSea #EarthFacts #DidYouKnow",
         "stat_badges": ["36,000 FEET", "1,000X PRESSURE"],
         "scenes": [
             {"entity_query": "Mariana Trench map", "search_query": "deep blue ocean water abyss", "media_type": "video", "motion": "zoom_in", "filter": "cinematic"},
@@ -141,7 +141,7 @@ FALLBACK_TOPICS_POOL = [
         "pillar": "Space Exploration",
         "topic": "Voyager 1 Golden Record Message",
         "script": "In 1977, NASA launched Voyager 1 into deep space carrying a 12 inch phonograph record made of solid gold. On it, scientists recorded natural sounds of Earth, music from Beethoven, and greetings in fifty five human languages. It was humanity's message in a bottle, thrown into the cosmic ocean. Voyager 1 is now over fifteen billion miles away in interstellar space, traveling at 38,000 miles per hour, further from home than anything else we've ever built. It will keep floating through the galaxy for billions of years, long after Earth itself is gone. Somewhere out there, it's still carrying our voice. Subscribe for more cosmic space stories!",
-        "description": "Discover the Voyager Golden Record, humanity's time capsule sent to interstellar space for alien civilizations to find!\n\nKey Takeaways:\n- Solid gold record carrying Earth sounds and music\n- Greetings in 55 human languages\n- Over 15 billion miles from Earth in deep space\n\n#Shorts #Space #NASA #Voyager #Cosmos",
+        "description": "Discover the Voyager Golden Record, humanity's time capsule sent to interstellar space!\n\n#Shorts #Space #NASA #Voyager #Cosmos",
         "stat_badges": ["YEAR 1977", "15 BILLION MILES"],
         "scenes": [
             {"entity_query": "Voyager 1 spacecraft", "search_query": "voyager spacecraft space NASA", "media_type": "photo", "motion": "zoom_in", "filter": "cinematic"},
@@ -151,6 +151,22 @@ FALLBACK_TOPICS_POOL = [
             {"entity_query": "Titan IIIE Centaur rocket launch 1977", "search_query": "rocket launch night sky", "media_type": "video", "motion": "zoom_in", "filter": "cinematic"},
             {"entity_query": "", "search_query": "solar system planets space", "media_type": "video", "motion": "pan_right", "filter": "normal"},
             {"entity_query": "Pale Blue Dot Earth NASA", "search_query": "planet earth floating space", "media_type": "video", "motion": "zoom_in", "filter": "normal"}
+        ]
+    },
+    {
+        "title": "The Volcano That Erased an Ancient City in Seconds 🌋 Pompeii",
+        "pillar": "Ancient History",
+        "topic": "The Eruption of Mount Vesuvius in 79 AD",
+        "script": "In 79 AD, Mount Vesuvius violently erupted, burying the ancient Roman city of Pompeii under twenty feet of volcanic ash. In just twenty-four hours, an entire thriving metropolis was frozen in time. The superheated ash preserved buildings, mosaics, and even the shapes of victims in their final moments. Today, archaeologists can walk through ancient Roman streets almost exactly as they looked two thousand years ago. One fateful morning changed history forever. Subscribe for more crazy history shorts!",
+        "description": "How Mount Vesuvius destroyed Pompeii in 79 AD and preserved it for millennia!\n\n#Shorts #History #Pompeii #Volcano #AncientRome",
+        "stat_badges": ["YEAR 79 AD", "20 FEET OF ASH"],
+        "scenes": [
+            {"entity_query": "Mount Vesuvius eruption painting", "search_query": "volcano erupting smoke fire", "media_type": "video", "motion": "zoom_in", "filter": "cinematic"},
+            {"entity_query": "Pompeii ruins aerial view", "search_query": "ancient roman ruins stone", "media_type": "photo", "motion": "pan_right", "filter": "vintage"},
+            {"entity_query": "Pompeii plaster casts victims", "search_query": "ancient museum artifacts archaeological", "media_type": "photo", "motion": "zoom_out", "filter": "bw"},
+            {"entity_query": "", "search_query": "volcanic ash cloud sky", "media_type": "video", "motion": "pan_left", "filter": "cinematic"},
+            {"entity_query": "", "search_query": "ancient roman street ruins", "media_type": "video", "motion": "zoom_in", "filter": "vibrant"},
+            {"entity_query": "", "search_query": "archeologist digging site", "media_type": "video", "motion": "pan_right", "filter": "normal"}
         ]
     }
 ]
@@ -252,20 +268,19 @@ Return ONLY valid raw JSON output without markdown formatting.
 async def fact_check_stat_badges(topic_data):
     api_key = os.environ.get("GEMINI_API_KEY")
     badges = topic_data.get("stat_badges", [])
-    if not api_key or USE_NEW_SDK is not True or not badges:
+    if not api_key or USE_NEW_SDK is None or not badges:
         print("⚠️ Fact-check pass skipped (no Gemini key/SDK or no stat_badges).")
         return topic_data
 
     print("\n🔎 Fact-checking stat badges against a live web search before locking the script...")
     try:
-        client = genai.Client(api_key=api_key)
         prompt = f"""
 Fact-check these claims from a short video script about "{topic_data.get('topic', '')}".
 
 Claims to verify: {json.dumps(badges)}
 Full script for context: {topic_data.get('script', '')}
 
-Use web search to confirm whether each claim is factually accurate. Respond ONLY with
+Confirm whether each claim is factually accurate. Respond ONLY with
 raw JSON: a list of objects, one per claim, each with:
 - "claim": the original claim text
 - "accurate": true or false
@@ -273,14 +288,23 @@ raw JSON: a list of objects, one per claim, each with:
   string in the same style (e.g. "36,070 FEET"); otherwise null. Only correct a value
   you are confident about from search results - do not guess.
 """
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                tools=[types.Tool(google_search=types.GoogleSearch())]
-            ),
-        )
-        clean_json = (response.text or "").replace("```json", "").replace("```", "").strip()
+        if USE_NEW_SDK:
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    tools=[types.Tool(google_search=types.GoogleSearch())]
+                ),
+            )
+            resp_text = response.text or ""
+        else:
+            genai_legacy.configure(api_key=api_key)
+            model = genai_legacy.GenerativeModel("gemini-2.0-flash")
+            response = model.generate_content(prompt)
+            resp_text = response.text or ""
+
+        clean_json = resp_text.replace("```json", "").replace("```", "").strip()
         checks = json.loads(clean_json)
 
         corrected = []
@@ -798,6 +822,7 @@ async def download_mixed_media_broll(scenes, clip_duration=4.0, pillar=""):
                                     "ffmpeg", "-y", "-i", raw_file,
                                     "-t", str(clip_duration), "-r", "30",
                                     "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,eq=contrast=1.1:saturation=1.15",
+                                    "-an",  # Strip residual audio streams from stock clip
                                     "-c:v", "libx264", "-pix_fmt", "yuv420p", clip_name
                                 ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                                 downloaded = True
@@ -857,7 +882,7 @@ async def download_mixed_media_broll(scenes, clip_duration=4.0, pillar=""):
 def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None,
                                clip_duration=4.0, transition_duration=TRANSITION_DURATION,
                                output_filename="final_output.mp4"):
-    print("\n4️⃣ Rendering Pro Video with Crossfade Transitions & Animated Karaoke Captions...")
+    print("\n4️⃣ Rendering Pro Video with Crossfade Transitions, Stat Overlay & Karaoke Captions...")
     if not clips:
         raise ValueError("No video clips available for rendering.")
 
@@ -865,6 +890,13 @@ def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None
     for clip in clips:
         ffmpeg_cmd.extend(["-i", clip])
     ffmpeg_cmd.extend(["-i", audio_file])
+
+    # Check for generated stat badge images
+    badge_files = [f"badge_{i+1}.png" for i in range(len(stat_badges or [])) if os.path.exists(f"badge_{i+1}.png")]
+    badge_input_start = len(clips) + 1  # Index following clips and audio_file
+
+    for b_file in badge_files:
+        ffmpeg_cmd.extend(["-i", b_file])
 
     filter_chains = []
     scaled_outputs = []
@@ -875,27 +907,41 @@ def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None
         scaled_outputs.append(f"v{i}")
 
     if len(scaled_outputs) == 1:
-        final_video_label = f"[{scaled_outputs[0]}]"
+        current_v_label = scaled_outputs[0]
     else:
-        current_label = scaled_outputs[0]
+        current_v_label = scaled_outputs[0]
         running_offset = clip_duration - transition_duration
         for idx in range(1, len(scaled_outputs)):
             next_label = scaled_outputs[idx]
             out_label = f"x{idx}"
             style = TRANSITION_STYLES[(idx - 1) % len(TRANSITION_STYLES)]
             filter_chains.append(
-                f"[{current_label}][{next_label}]xfade=transition={style}:duration={transition_duration}:offset={running_offset}[{out_label}]"
+                f"[{current_v_label}][{next_label}]xfade=transition={style}:duration={transition_duration}:offset={running_offset}[{out_label}]"
             )
-            current_label = out_label
+            current_v_label = out_label
             running_offset += clip_duration - transition_duration
-        final_video_label = f"[{current_label}]"
 
+    # Apply Vignette Box
     vignette_box = "drawbox=x=0:y=ih-450:w=iw:h=450:color=black@0.4:t=fill"
+    filter_chains.append(f"[{current_v_label}]{vignette_box}[v_vig]")
+    current_v_label = "v_vig"
 
-    # Animated Karaoke .ass Subtitle Filter
-    subtitle_filter = f"ass=filename={subtitle_file}"
+    # Overlay Stat Badges onto Video Stream
+    for b_i, b_file in enumerate(badge_files):
+        b_stream_idx = badge_input_start + b_i
+        start_t = 1.5 + (b_i * 12.0)
+        end_t = start_t + 6.0
+        out_b_label = f"v_badge_{b_i+1}"
+        filter_chains.append(
+            f"[{current_v_label}][{b_stream_idx}:v]overlay=x=(W-w)/2:y=220:enable='between(t,{start_t},{end_t})'[{out_b_label}]"
+        )
+        current_v_label = out_b_label
 
-    filter_chains.append(f"{final_video_label}{vignette_box},{subtitle_filter}[vfinal]")
+    # Escape path characters for subtitle filter graph
+    escaped_ass_path = subtitle_file.replace("\\", "/").replace(":", "\\:")
+    subtitle_filter = f"ass=filename='{escaped_ass_path}'"
+
+    filter_chains.append(f"[{current_v_label}]{subtitle_filter}[vfinal]")
 
     filter_complex_str = ";".join(filter_chains)
     ffmpeg_cmd.extend(["-filter_complex", filter_complex_str])
@@ -911,9 +957,8 @@ def render_professional_short(clips, audio_file, subtitle_file, stat_badges=None
         output_filename
     ])
 
-    print("⚡ Compiling pro-level video with crossfades, vignette, music & karaoke captions...")
+    print("⚡ Compiling pro-level video with crossfades, stat badges, vignette & karaoke captions...")
     
-    # Log file redirection prevents 30-minute OS subprocess pipe deadlock
     with open("ffmpeg_render.log", "w", encoding="utf-8") as log_file:
         result = subprocess.run(ffmpeg_cmd, stdout=log_file, stderr=log_file)
 
