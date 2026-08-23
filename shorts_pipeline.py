@@ -10,7 +10,6 @@ from pathlib import Path
 import requests
 from PIL import Image, ImageDraw, ImageFont
 
-# Google GenAI & YouTube API imports
 try:
     from google import genai
     from google.genai import types
@@ -23,15 +22,13 @@ from googleapiclient.http import MediaFileUpload
 import edge_tts
 
 # ---------------------------------------------------------------------------
-# CONFIGURATION & CONSTANTS
+# CONFIGURATION
 # ---------------------------------------------------------------------------
 WIDTH, HEIGHT = 1080, 1920
 FPS = 30
-MAX_SCENE_DURATION = 8.0
-DEFAULT_TIMEOUT = 15  # Network request timeout in seconds
-FFMPEG_TIMEOUT = 180   # FFmpeg process timeout in seconds
+DEFAULT_TIMEOUT = 15  
+FFMPEG_TIMEOUT = 180   
 
-# Updated active models based on current Google GenAI API releases
 MODEL_CANDIDATES = [
     "gemini-3.6-flash",
     "gemini-3.5-flash-lite"
@@ -53,10 +50,9 @@ FALLBACK_TOPICS = [
 ]
 
 # ---------------------------------------------------------------------------
-# HELPER FUNCTIONS
+# HELPERS
 # ---------------------------------------------------------------------------
 def safe_request_get(url, headers=None, params=None, stream=False, timeout=DEFAULT_TIMEOUT):
-    """Executes requests.get with an enforced timeout to prevent network hangs."""
     try:
         response = requests.get(url, headers=headers, params=params, stream=stream, timeout=timeout)
         response.raise_for_status()
@@ -66,7 +62,6 @@ def safe_request_get(url, headers=None, params=None, stream=False, timeout=DEFAU
         return None
 
 def run_ffmpeg_command(cmd, timeout=FFMPEG_TIMEOUT):
-    """Runs FFmpeg via subprocess with explicit timeout and buffer capture."""
     try:
         process = subprocess.run(
             cmd,
@@ -87,7 +82,6 @@ def run_ffmpeg_command(cmd, timeout=FFMPEG_TIMEOUT):
         return False
 
 def generate_placeholder_image(filename, text="Shorts Media"):
-    """Generates a simple fallback card if stock media download fails."""
     img = Image.new('RGB', (WIDTH, HEIGHT), color=(20, 24, 33))
     draw = ImageDraw.Draw(img)
     draw.rectangle([40, 40, WIDTH-40, HEIGHT-40], outline=(100, 110, 140), width=4)
@@ -95,7 +89,7 @@ def generate_placeholder_image(filename, text="Shorts Media"):
     print(f"🖼️ Generated fallback placeholder image: {filename}")
 
 # ---------------------------------------------------------------------------
-# STEP 1: AI SCRIPT & CONCEPT GENERATOR
+# PIPELINE STAGES
 # ---------------------------------------------------------------------------
 def generate_concept():
     print("1️⃣ AI Director Brainstorming Viral Concept & Blueprint...")
@@ -129,9 +123,6 @@ def generate_concept():
     print(f"📌 Selected Fallback Topic: {chosen['topic']}")
     return chosen
 
-# ---------------------------------------------------------------------------
-# STEP 2: VOICE & CAPTIONS ENGINE
-# ---------------------------------------------------------------------------
 async def create_voiceover(text, voice="en-US-AndrewNeural"):
     print("2️⃣ Generating Voiceover & Captions...")
     communicate = edge_tts.Communicate(text, voice)
@@ -144,8 +135,8 @@ async def create_voiceover(text, voice="en-US-AndrewNeural"):
             elif chunk["type"] == "Word":
                 submaker.feed(chunk)
                 
-    # Use generate_subs() to build WebVTT captions compatible with edge-tts v7+
-    vtt_content = submaker.generate_subs()
+    # Extracted WebVTT subtitles using get_vtt()
+    vtt_content = submaker.get_vtt()
     with open("captions.vtt", "w", encoding="utf-8") as f:
         f.write(vtt_content)
     print("✅ Voiceover (voiceover.mp3) and Captions (captions.vtt) generated.")
@@ -158,9 +149,6 @@ def measure_audio_duration(file_path):
     except Exception:
         return 40.0
 
-# ---------------------------------------------------------------------------
-# STEP 3: MEDIA RETRIEVAL & MOTION
-# ---------------------------------------------------------------------------
 def fetch_media(keywords, num_scenes=6):
     print("3️⃣ Assembling Mixed-Media Scenes...")
     pexels_key = os.environ.get("PEXELS_API_KEY")
@@ -197,7 +185,6 @@ def fetch_media(keywords, num_scenes=6):
     return scene_files
 
 def render_ken_burns_scene(input_img, output_mp4, duration):
-    """Applies pan/zoom to static image safely using FFmpeg with timeout."""
     zoom_cmd = (
         f"zoompan=z='min(zoom+0.0015,1.25)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
         f"d={int(duration*FPS)}:s={WIDTH}x{HEIGHT}:fps={FPS}"
@@ -215,9 +202,6 @@ def render_ken_burns_scene(input_img, output_mp4, duration):
     ]
     return run_ffmpeg_command(cmd, timeout=60)
 
-# ---------------------------------------------------------------------------
-# STEP 4: VIDEO ASSEMBLY & EDITING
-# ---------------------------------------------------------------------------
 def build_final_video(scenes, total_duration):
     print("4️⃣ FFmpeg Video Rendering...")
     scene_duration = total_duration / len(scenes)
@@ -237,7 +221,6 @@ def build_final_video(scenes, total_duration):
         for clip in rendered_clips:
             f.write(f"file '{clip}'\n")
 
-    # Combine video clips with audio and burn WebVTT captions
     cmd = [
         "ffmpeg", "-y",
         "-f", "concat",
@@ -259,9 +242,6 @@ def build_final_video(scenes, total_duration):
     else:
         raise RuntimeError("❌ Final video concatenation failed.")
 
-# ---------------------------------------------------------------------------
-# STEP 5: YOUTUBE AUTOMATED UPLOAD
-# ---------------------------------------------------------------------------
 def upload_to_youtube(concept_data):
     print("5️⃣ Uploading to YouTube...")
     client_id = os.environ.get("YOUTUBE_CLIENT_ID")
@@ -309,40 +289,15 @@ def upload_to_youtube(concept_data):
     except Exception as e:
         print(f"❌ YouTube upload failed: {e}")
 
-# ---------------------------------------------------------------------------
-# MAIN PIPELINE EXECUTION
-# ---------------------------------------------------------------------------
 def main():
     print("✅ Autonomous AI Director Pipeline Initialized!")
-    
-    # 1. Concept Generation
     concept = generate_concept()
-
-    # 2. Voiceover & Captions
     asyncio.run(create_voiceover(concept["script"]))
     audio_duration = measure_audio_duration("voiceover.mp3")
     print(f"⏱️ Audio duration measured: {audio_duration:.2f}s")
-
-    # 3. Fetch Media
     scenes = fetch_media(concept.get("keywords", ["history"]), num_scenes=6)
-
-    # 4. Render Video
     build_final_video(scenes, audio_duration)
-
-    # 5. Upload to YouTube
     upload_to_youtube(concept)
-
-    # Save topic history
-    try:
-        history = []
-        if os.path.exists("used_topics.json"):
-            with open("used_topics.json", "r") as f:
-                history = json.load(f)
-        history.append(concept["topic"])
-        with open("used_topics.json", "w") as f:
-            json.dump(history, f, indent=2)
-    except Exception as e:
-        print(f"⚠️ Could not write topic history: {e}")
 
 if __name__ == "__main__":
     main()
