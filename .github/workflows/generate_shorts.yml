@@ -2,10 +2,6 @@ name: YouTube Shorts Pipeline
 
 on:
   workflow_dispatch: {}
-  schedule:
-    # Two runs per day, ~12 hours apart (UTC).
-    - cron: "0 12 * * *"
-    - cron: "0 0 * * *"
 
 # Prevents two overlapping pipeline runs from pushing topic history concurrently
 concurrency:
