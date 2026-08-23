@@ -31,10 +31,10 @@ MAX_SCENE_DURATION = 8.0
 DEFAULT_TIMEOUT = 15  # Network request timeout in seconds
 FFMPEG_TIMEOUT = 180   # FFmpeg process timeout in seconds
 
-# Updated active models (2026 releases)
+# Updated active models based on latest API specs
 MODEL_CANDIDATES = [
-    "gemini-2.5-flash",
-    "gemini-1.5-flash"
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite"
 ]
 
 FALLBACK_TOPICS = [
@@ -56,7 +56,7 @@ FALLBACK_TOPICS = [
 # HELPER FUNCTIONS
 # ---------------------------------------------------------------------------
 def safe_request_get(url, headers=None, params=None, stream=False, timeout=DEFAULT_TIMEOUT):
-    """Executes requests.get with a enforced timeout to prevent network hangs."""
+    """Executes requests.get with an enforced timeout to prevent network hangs."""
     try:
         response = requests.get(url, headers=headers, params=params, stream=stream, timeout=timeout)
         response.raise_for_status()
@@ -90,7 +90,6 @@ def generate_placeholder_image(filename, text="Shorts Media"):
     """Generates a simple fallback card if stock media download fails."""
     img = Image.new('RGB', (WIDTH, HEIGHT), color=(20, 24, 33))
     draw = ImageDraw.Draw(img)
-    # Simple rectangle border
     draw.rectangle([40, 40, WIDTH-40, HEIGHT-40], outline=(100, 110, 140), width=4)
     img.save(filename)
     print(f"🖼️ Generated fallback placeholder image: {filename}")
@@ -134,7 +133,7 @@ def generate_concept():
 # STEP 2: VOICE & CAPTIONS ENGINE
 # ---------------------------------------------------------------------------
 async def create_voiceover(text, voice="en-US-AndrewNeural"):
-    print("2️⃣ Generating Voiceover & Karaoke Subtitles...")
+    print("2️⃣ Generating Voiceover & Captions...")
     communicate = edge_tts.Communicate(text, voice)
     submaker = edge_tts.SubMaker()
     
@@ -145,11 +144,11 @@ async def create_voiceover(text, voice="en-US-AndrewNeural"):
             elif chunk["type"] == "Word":
                 submaker.feed(chunk)
                 
-    # Build ASS format captions
-    ass_content = submaker.get_ass()
-    with open("captions.ass", "w", encoding="utf-8") as f:
-        f.write(ass_content)
-    print("✅ Voiceover (voiceover.mp3) and Captions (captions.ass) generated.")
+    # Generate WebVTT format captions for modern edge-tts compatibility
+    vtt_content = submaker.generate_subs()
+    with open("captions.vtt", "w", encoding="utf-8") as f:
+        f.write(vtt_content)
+    print("✅ Voiceover (voiceover.mp3) and Captions (captions.vtt) generated.")
 
 def measure_audio_duration(file_path):
     cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprintwrappers=1:nokey=1", file_path]
@@ -224,7 +223,6 @@ def build_final_video(scenes, total_duration):
     scene_duration = total_duration / len(scenes)
     rendered_clips = []
 
-    # Render motion clips for each scene
     for i, img in enumerate(scenes):
         clip_path = f"clip_{i}.mp4"
         print(f"🎬 Processing Scene {i+1}/{len(scenes)} ({scene_duration:.1f}s)...")
@@ -235,19 +233,18 @@ def build_final_video(scenes, total_duration):
     if not rendered_clips:
         raise RuntimeError("❌ All scene renders failed.")
 
-    # Create concat list file
     with open("concat_list.txt", "w") as f:
         for clip in rendered_clips:
             f.write(f"file '{clip}'\n")
 
-    # Combine video clips with audio and burn subtitles
+    # Combine video clips with audio and burn VTT subtitles
     cmd = [
         "ffmpeg", "-y",
         "-f", "concat",
         "-safe", "0",
         "-i", "concat_list.txt",
         "-i", "voiceover.mp3",
-        "-vf", "ass=captions.ass",
+        "-vf", "subtitles=captions.vtt",
         "-c:v", "libx264",
         "-c:a", "aac",
         "-b:a", "192k",
