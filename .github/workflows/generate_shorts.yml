@@ -3,13 +3,11 @@ name: YouTube Shorts Pipeline
 on:
   workflow_dispatch: {}
   schedule:
-    # Two runs per day, ~12 hours apart (UTC). Adjust to your preferred times.
+    # Two runs per day, ~12 hours apart (UTC).
     - cron: "0 12 * * *"
     - cron: "0 0 * * *"
 
-# Prevents a second run from starting while one is still in progress.
-# This is the root cause of the "non-fast-forward" push error: two
-# overlapping runs both trying to commit used_topics.json.
+# Prevents two overlapping pipeline runs from pushing topic history concurrently
 concurrency:
   group: shorts-pipeline
   cancel-in-progress: false
@@ -76,8 +74,7 @@ jobs:
           git add used_topics.json
           git commit -m "Update topic history [skip ci]"
 
-          # Rebase on top of the latest remote main and retry the push a
-          # few times in case another job lands a commit in between.
+          # Rebase on top of the latest remote main and retry the push
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             if git rebase origin/main; then
