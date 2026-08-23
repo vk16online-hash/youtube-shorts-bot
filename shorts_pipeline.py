@@ -31,7 +31,7 @@ MAX_SCENE_DURATION = 8.0
 DEFAULT_TIMEOUT = 15  # Network request timeout in seconds
 FFMPEG_TIMEOUT = 180   # FFmpeg process timeout in seconds
 
-# Updated active models based on latest API specs
+# Updated active models based on current Google GenAI API releases
 MODEL_CANDIDATES = [
     "gemini-3.6-flash",
     "gemini-3.5-flash-lite"
@@ -144,7 +144,7 @@ async def create_voiceover(text, voice="en-US-AndrewNeural"):
             elif chunk["type"] == "Word":
                 submaker.feed(chunk)
                 
-    # Generate WebVTT format captions for modern edge-tts compatibility
+    # Use generate_subs() to build WebVTT captions compatible with edge-tts v7+
     vtt_content = submaker.generate_subs()
     with open("captions.vtt", "w", encoding="utf-8") as f:
         f.write(vtt_content)
@@ -237,7 +237,7 @@ def build_final_video(scenes, total_duration):
         for clip in rendered_clips:
             f.write(f"file '{clip}'\n")
 
-    # Combine video clips with audio and burn VTT subtitles
+    # Combine video clips with audio and burn WebVTT captions
     cmd = [
         "ffmpeg", "-y",
         "-f", "concat",
