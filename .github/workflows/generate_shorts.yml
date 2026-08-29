@@ -1,11 +1,7 @@
 name: YouTube Shorts Pipeline
 
 on:
-  workflow_dispatch: {}
-  schedule:
-    - cron: "55 18 * * *"
-    - cron: "0 0 * * *"
-
+  wo
 concurrency:
   group: shorts-pipeline
   cancel-in-progress: false
